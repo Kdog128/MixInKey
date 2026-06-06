@@ -5,7 +5,14 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "i.scdn.co",
+      },
+    ],
   },
+  allowedDevOrigins: ["*.vusercontent.net"],
 }
 
 export default nextConfig
