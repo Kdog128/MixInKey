@@ -4,15 +4,10 @@ import { useState, useCallback } from "react";
 import { Disc3, Loader2, ArrowLeftRight } from "lucide-react";
 import { TrackSearch, TrackResult } from "@/components/track-search";
 import { CompatibilityCard, AudioFeatures } from "@/components/compatibility-card";
-import { getCamelotKey, getKeyCompatibility, CamelotKey, KeyCompatibility } from "@/lib/camelot";
-
 interface AnalysisState {
   loading: boolean;
   featuresA: AudioFeatures | null;
   featuresB: AudioFeatures | null;
-  camelotA: CamelotKey | null;
-  camelotB: CamelotKey | null;
-  keyCompat: KeyCompatibility | null;
   error: string | null;
 }
 
@@ -20,9 +15,6 @@ const emptyAnalysis: AnalysisState = {
   loading: false,
   featuresA: null,
   featuresB: null,
-  camelotA: null,
-  camelotB: null,
-  keyCompat: null,
   error: null,
 };
 
@@ -41,18 +33,12 @@ export default function Home() {
       }
       const [fA, fB] = data.features;
       if (!fA || !fB) {
-        throw new Error("Audio features unavailable for one or both tracks");
+        throw new Error("Track data unavailable for one or both tracks");
       }
-      const cA = getCamelotKey(fA.key, fA.mode);
-      const cB = getCamelotKey(fB.key, fB.mode);
-      const keyCompat = cA && cB ? getKeyCompatibility(cA, cB) : null;
       setAnalysis({
         loading: false,
         featuresA: fA,
         featuresB: fB,
-        camelotA: cA,
-        camelotB: cB,
-        keyCompat,
         error: null,
       });
     } catch (err) {
@@ -240,7 +226,7 @@ export default function Home() {
             <div className="text-center">
               <p className="text-sm font-medium text-foreground">Analyzing tracks&hellip;</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Fetching audio features from Spotify
+                Fetching track data from Spotify
               </p>
             </div>
           </div>
@@ -286,15 +272,15 @@ export default function Home() {
               trackB={trackB}
               featuresA={analysis.featuresA!}
               featuresB={analysis.featuresB!}
-              camelotA={analysis.camelotA}
-              camelotB={analysis.camelotB}
-              keyCompat={analysis.keyCompat}
+              camelotA={null}
+              camelotB={null}
+              keyCompat={null}
             />
           </section>
         )}
 
         <footer className="text-center text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
-          Audio features powered by the Spotify Web API
+          Track data powered by the Spotify Web API &mdash; BPM/key require a dedicated tool (Rekordbox, Mixed In Key)
         </footer>
       </div>
     </main>

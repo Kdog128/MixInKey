@@ -121,6 +121,72 @@ export function getBpmCompatibility(bpm1: number, bpm2: number): number {
   return 10;
 }
 
+/** Score based on how similar two popularity values are (0–100 each). */
+export function getPopularityCompatibility(pop1: number, pop2: number): number {
+  const diff = Math.abs(pop1 - pop2); // 0–100
+  if (diff <= 5) return 100;
+  if (diff <= 15) return 85;
+  if (diff <= 25) return 70;
+  if (diff <= 40) return 50;
+  if (diff <= 55) return 35;
+  return 20;
+}
+
+/** Score based on duration difference. */
+export function getDurationCompatibility(ms1: number, ms2: number): number {
+  const diff = Math.abs(ms1 - ms2) / 1000; // seconds
+  if (diff <= 15) return 100;
+  if (diff <= 30) return 85;
+  if (diff <= 60) return 70;
+  if (diff <= 90) return 55;
+  if (diff <= 120) return 40;
+  return 25;
+}
+
+/** Score based on genre overlap (shared genre strings). */
+export function getGenreCompatibility(genres1: string[], genres2: string[]): number {
+  if (genres1.length === 0 && genres2.length === 0) return 60; // unknown = neutral
+  if (genres1.length === 0 || genres2.length === 0) return 45;
+  const set1 = new Set(genres1.map((g) => g.toLowerCase()));
+  const shared = genres2.filter((g) => set1.has(g.toLowerCase())).length;
+  if (shared >= 3) return 100;
+  if (shared === 2) return 85;
+  if (shared === 1) return 65;
+  // No exact match — check for partial keyword overlap
+  const keywords1 = genres1.join(" ").toLowerCase().split(/\s+/);
+  const keywords2 = genres2.join(" ").toLowerCase().split(/\s+/);
+  const kwSet = new Set(keywords1);
+  const kwOverlap = keywords2.filter((w) => w.length > 3 && kwSet.has(w)).length;
+  if (kwOverlap >= 2) return 55;
+  if (kwOverlap === 1) return 42;
+  return 20;
+}
+
+/** Overall score for the available-data (no audio-features) path.
+ *  Weights: popularity 35%, duration 25%, genre 25%, estimated BPM 15%.
+ */
+export function getOverallCompatibilityFromTrackData(
+  pop1: number, pop2: number,
+  ms1: number, ms2: number,
+  genres1: string[], genres2: string[],
+  bpm1: number | null, bpm2: number | null,
+): number {
+  const popScore = getPopularityCompatibility(pop1, pop2);
+  const durScore = getDurationCompatibility(ms1, ms2);
+  const genreScore = getGenreCompatibility(genres1, genres2);
+  const bpmScore = (bpm1 != null && bpm2 != null) ? getBpmCompatibility(bpm1, bpm2) : 60;
+  const bpmWeight = (bpm1 != null && bpm2 != null) ? 0.15 : 0;
+  const baseWeight = 1 - bpmWeight;
+  // Distribute base weights proportionally when BPM is missing
+  return Math.round(
+    popScore   * (0.35 * baseWeight / 0.85) +
+    durScore   * (0.25 * baseWeight / 0.85) +
+    genreScore * (0.25 * baseWeight / 0.85) +
+    bpmScore   * bpmWeight
+  );
+}
+
+/** Legacy function kept for future audio-features support. */
 export function getOverallCompatibility(
   keyScore: number,
   bpmScore: number,
