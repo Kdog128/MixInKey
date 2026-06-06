@@ -61,12 +61,14 @@ export async function GET(request: NextRequest) {
     const headers = { Authorization: `Bearer ${token}` };
 
     // Fetch full track objects (popularity, duration_ms, explicit, artists)
-    const tracksRes = await fetch(
-      `https://api.spotify.com/v1/tracks?ids=${idList.map(encodeURIComponent).join(",")}`,
-      { headers, cache: "no-store" }
-    );
+    const tracksUrl = `https://api.spotify.com/v1/tracks?ids=${idList.map(encodeURIComponent).join(",")}`;
+    console.log("[v0] tracks request URL:", tracksUrl);
+    console.log("[v0] token prefix (first 10 chars):", token.slice(0, 10));
+    const tracksRes = await fetch(tracksUrl, { headers, cache: "no-store" });
+    console.log("[v0] tracks response status:", tracksRes.status);
     if (!tracksRes.ok) {
       const body = await tracksRes.text().catch(() => "");
+      console.log("[v0] tracks error body:", body);
       let errMsg = `Spotify tracks fetch failed (${tracksRes.status})`;
       try {
         const parsed = JSON.parse(body) as { error?: { message?: string } };
