@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     const data = await res.json();
     return NextResponse.json({ features: data.audio_features });
   } catch (err) {
-    console.error("[v0] Audio features error:", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

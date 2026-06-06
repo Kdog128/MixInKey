@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+// DJ Track Compatibility Tool
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,

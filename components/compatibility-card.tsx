@@ -92,14 +92,12 @@ function ScoreRing({
 
 function StatBar({
   label,
-  value,
   icon: Icon,
   valueA,
   valueB,
   formatFn,
 }: {
   label: string;
-  value?: number;
   icon: React.ElementType;
   valueA: number;
   valueB: number;
