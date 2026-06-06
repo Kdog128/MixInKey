@@ -1,39 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-let cachedToken: { token: string; expires: number } | null = null;
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < cachedToken.expires) {
-    return cachedToken.token;
-  }
-  const CLIENT_ID = (process.env.SPOTIFY_CLIENT_ID ?? "").trim();
-  const CLIENT_SECRET = (process.env.SPOTIFY_CLIENT_SECRET ?? "").trim();
-  if (!CLIENT_ID || !CLIENT_SECRET) {
-    throw new Error("Spotify credentials not configured");
-  }
-  const creds = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
-  const res = await fetch("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${creds}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: "grant_type=client_credentials",
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    let parsed: Record<string, string> = {};
-    try { parsed = JSON.parse(body); } catch { /* ignore */ }
-    cachedToken = null; // reset so next request retries
-    throw new Error(parsed.error_description ?? `Spotify auth failed: ${res.status}`);
-  }
-  const data = await res.json();
-  cachedToken = {
-    token: data.access_token,
-    expires: Date.now() + data.expires_in * 1000 - 5000,
-  };
-  return cachedToken.token;
-}
+import { getSpotifyToken } from "@/lib/spotify-auth";
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q");
@@ -42,14 +8,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const token = await getAccessToken();
+    const token = await getSpotifyToken();
     const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=8`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
     });
+
     if (!res.ok) {
-      return NextResponse.json({ error: "Search failed" }, { status: res.status });
+      return NextResponse.json({ error: `Spotify search failed (${res.status})` }, { status: res.status });
     }
+
     const data = await res.json();
     const tracks = (data.tracks?.items ?? []).map((t: SpotifyTrack) => ({
       id: t.id,
@@ -60,6 +29,7 @@ export async function GET(request: NextRequest) {
       preview_url: t.preview_url,
       duration_ms: t.duration_ms,
     }));
+
     return NextResponse.json({ tracks });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";
