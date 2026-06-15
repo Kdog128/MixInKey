@@ -1,5 +1,6 @@
 import type { CamelotKey } from "@/lib/camelot";
 import { fetchGetSongBpmAnalysis, fetchGetSongBpmGenres } from "@/lib/getsongbpm";
+import { fetchLastFmArtistGenres } from "@/lib/lastfm";
 import { fetchTrackAudioAnalysis as fetchMusicBrainzAnalysis } from "@/lib/musicbrainz";
 import { fetchReccoBeatsBySpotifyIds } from "@/lib/reccobeats";
 import { fetchSoundNetAnalysis } from "@/lib/soundnet";
@@ -80,13 +81,30 @@ async function enrichWithGetSongBpmGenres(
   return { ...analysis, genres: mergeGenreLists(analysis.genres, genres) };
 }
 
-/** Always merge GetSongBPM genres unless GetSongBPM already supplied BPM/key. */
+async function enrichWithLastFmGenres(
+  track: TrackAudioInput,
+  analysis: AudioAnalysis
+): Promise<AudioAnalysis> {
+  const genres = await fetchLastFmArtistGenres(track.artist);
+  if (genres.length === 0) return analysis;
+  return { ...analysis, genres: mergeGenreLists(analysis.genres, genres) };
+}
+
+/** Merge GetSongBPM genres, then Last.fm if still empty. */
 async function finalizeAnalysis(
   track: TrackAudioInput,
   analysis: AudioAnalysis
 ): Promise<AudioAnalysis> {
-  if (analysis.source === "getsongbpm") return analysis;
-  return enrichWithGetSongBpmGenres(track, analysis);
+  let result =
+    analysis.source === "getsongbpm"
+      ? analysis
+      : await enrichWithGetSongBpmGenres(track, analysis);
+
+  if (result.genres.length === 0) {
+    result = await enrichWithLastFmGenres(track, result);
+  }
+
+  return result;
 }
 
 async function fetchTrackAudioAnalysisFallback(track: TrackAudioInput): Promise<AudioAnalysis> {
