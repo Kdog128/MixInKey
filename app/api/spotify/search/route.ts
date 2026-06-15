@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSpotifyToken } from "@/lib/spotify-auth";
+import { mapSpotifyTrack, type SpotifyApiTrack } from "@/lib/spotify-track";
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q");
@@ -37,19 +38,7 @@ export async function GET(request: NextRequest) {
       tracksObject: data.tracks ? { total: data.tracks.total, limit: data.tracks.limit } : null,
     });
 
-    const tracks = rawItems.map((t: SpotifyTrack) => ({
-      id: t.id,
-      name: t.name,
-      artist: t.artists.map((a) => a.name).join(", "),
-      artist_id: t.artists[0]?.id ?? null,
-      album: t.album.name,
-      image: t.album.images?.[1]?.url ?? t.album.images?.[0]?.url ?? null,
-      preview_url: t.preview_url,
-      duration_ms: t.duration_ms,
-      popularity: t.popularity ?? 0,
-      explicit: t.explicit ?? false,
-      release_date: t.album.release_date ?? null,
-    }));
+    const tracks = rawItems.map((t: SpotifyApiTrack) => mapSpotifyTrack(t));
 
     return NextResponse.json({ tracks });
   } catch (err) {
@@ -57,15 +46,4 @@ export async function GET(request: NextRequest) {
     console.error("[spotify/search] Unhandled error:", err);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
-
-interface SpotifyTrack {
-  id: string;
-  name: string;
-  popularity: number;
-  explicit: boolean;
-  artists: { id: string; name: string }[];
-  album: { name: string; release_date: string; images: { url: string }[] };
-  preview_url: string | null;
-  duration_ms: number;
 }

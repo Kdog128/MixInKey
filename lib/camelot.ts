@@ -161,6 +161,59 @@ export function getKeyCompatibility(a: CamelotKey, b: CamelotKey): KeyCompatibil
   return { type: "incompatible", label: "Incompatible", score: 15, description: "Large harmonic distance — clashing keys" };
 }
 
+export interface KeyCompatStyle {
+  color: string;
+  bg: string;
+  border: string;
+}
+
+/** UI colors for key compatibility labels — aligned with the score ring system. */
+export function getKeyCompatStyle(type: CompatibilityType): KeyCompatStyle {
+  switch (type) {
+    case "perfect":
+    case "relative":
+    case "compatible":
+    case "energy_boost":
+    case "energy_drop":
+      return {
+        color: "#22c55e",
+        bg: "rgba(34, 197, 94, 0.1)",
+        border: "rgba(34, 197, 94, 0.2)",
+      };
+    case "adjacent":
+      return {
+        color: "#eab308",
+        bg: "rgba(234, 179, 8, 0.1)",
+        border: "rgba(234, 179, 8, 0.2)",
+      };
+    case "incompatible":
+      return {
+        color: "#ef4444",
+        bg: "rgba(239, 68, 68, 0.1)",
+        border: "rgba(239, 68, 68, 0.2)",
+      };
+  }
+}
+
+/** DJ-facing mix advice from the Camelot relationship between two keys. */
+export function getMixingTip(compat: KeyCompatibility): string {
+  switch (compat.type) {
+    case "perfect":
+    case "relative":
+      return "Direct mix — keys are harmonically compatible";
+    case "energy_boost":
+      return "Energy boost mix — step up one position on the wheel";
+    case "energy_drop":
+      return "Energy drop mix — step down one position on the wheel";
+    case "adjacent":
+      return "Adjacent mix — step one position on the wheel for a smooth handoff";
+    case "compatible":
+      return "Short overlap — keys are workable but keep the transition brief";
+    case "incompatible":
+      return "Use a transition track — keys are too far apart to mix directly";
+  }
+}
+
 export function getBpmCompatibility(bpm1: number, bpm2: number): number {
   const ratio = Math.max(bpm1, bpm2) / Math.min(bpm1, bpm2);
   if (ratio <= 1.02) return 100;

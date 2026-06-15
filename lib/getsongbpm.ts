@@ -14,6 +14,8 @@ const EMPTY: AudioAnalysis = {
   musicalKey: null,
   camelot: null,
   source: null,
+  popularity: null,
+  genres: [],
 };
 
 interface GetSongKeyObject {
@@ -24,6 +26,7 @@ interface GetSongKeyObject {
 
 interface GetSongArtist {
   name?: string;
+  genres?: string[];
 }
 
 interface GetSongSearchResult {
@@ -124,6 +127,12 @@ function titleSimilarity(a: string, b: string): number {
   return shared / Math.max(leftWords.size, rightWords.size);
 }
 
+function extractGenresFromResult(result: GetSongSearchResult): string[] {
+  if (!result.artist) return [];
+  const artists = Array.isArray(result.artist) ? result.artist : [result.artist];
+  return [...new Set(artists.flatMap((artist) => artist.genres ?? []).filter(Boolean))];
+}
+
 function resultToAnalysis(result: GetSongSearchResult): AudioAnalysis {
   const musicalKey = extractMusicalKey(result);
   const camelot: CamelotKey | null = musicalKey ? parseMusicalKeyString(musicalKey) : null;
@@ -133,6 +142,8 @@ function resultToAnalysis(result: GetSongSearchResult): AudioAnalysis {
     musicalKey,
     camelot,
     source: "getsongbpm",
+    popularity: null,
+    genres: extractGenresFromResult(result),
   };
 }
 
@@ -258,6 +269,7 @@ export async function fetchGetSongBpmAnalysis(track: GetSongBpmTrackInput): Prom
       artist: artistNames(match).join(", "),
       bpm: analysis.bpm,
       key: analysis.musicalKey,
+      genres: analysis.genres,
     });
     return analysis;
   } catch (err) {

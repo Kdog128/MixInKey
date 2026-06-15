@@ -3,7 +3,28 @@
 import { useState, useCallback } from "react";
 import { Disc3, Loader2, ArrowLeftRight } from "lucide-react";
 import { TrackSearch, TrackResult } from "@/components/track-search";
-import { CompatibilityCard, TrackFeatures } from "@/components/compatibility-card";
+import { CompatibilityCard, TrackFeatures, type AudioAnalysisSource } from "@/components/compatibility-card";
+
+const SOURCE_LABELS: Record<NonNullable<AudioAnalysisSource>, string> = {
+  reccobeats: "ReccoBeats",
+  getsongbpm: "GetSongBPM",
+  soundnet: "SoundNet",
+  musicbrainz: "MusicBrainz",
+};
+
+function formatBpmKeySourceLabel(
+  featuresA: TrackFeatures | null,
+  featuresB: TrackFeatures | null
+): string {
+  const sources = [featuresA?.source, featuresB?.source].filter(
+    (s): s is NonNullable<AudioAnalysisSource> => s != null
+  );
+  const unique = [...new Set(sources)];
+
+  if (unique.length === 0) return "BPM & Key unavailable";
+  if (unique.length === 1) return `BPM & Key via ${SOURCE_LABELS[unique[0]]}`;
+  return `BPM & Key via ${unique.map((s) => SOURCE_LABELS[s]).join(" & ")}`;
+}
 interface AnalysisState {
   loading: boolean;
   featuresA: TrackFeatures | null;
@@ -147,7 +168,7 @@ export default function Home() {
               DJ Mix Compatibility
             </h1>
             <p className="mt-2 text-muted-foreground text-pretty max-w-md mx-auto text-sm leading-relaxed">
-              Search two Spotify tracks to compare popularity, duration, genres, and release date — plus BPM and key from GetSongBPM.
+              Search two Spotify tracks to instantly analyze BPM, musical key, energy and compatibility — with a live Camelot wheel.
             </p>
           </div>
         </header>
@@ -158,14 +179,18 @@ export default function Home() {
           className="rounded-2xl border border-border bg-card p-5 md:p-6 flex flex-col gap-5"
           style={{ boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}
         >
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_44px_1fr] gap-4 items-start">
-            <TrackSearch
-              label="Track 1"
-              accentColor="purple"
-              selectedTrack={trackA}
-              onSelect={handleSelectA}
-              onClear={handleClearA}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] gap-4 items-start min-w-0">
+            <div className="min-w-0">
+              <TrackSearch
+                label="Track 1"
+                accentColor="purple"
+                selectedTrack={trackA}
+                onSelect={handleSelectA}
+                onClear={handleClearA}
+                bpm={analysis.featuresA?.bpm}
+                musicalKey={analysis.featuresA?.musical_key}
+              />
+            </div>
 
             {/* Swap */}
             <div className="flex items-center justify-center md:pt-7">
@@ -192,13 +217,17 @@ export default function Home() {
               </button>
             </div>
 
-            <TrackSearch
-              label="Track 2"
-              accentColor="blue"
-              selectedTrack={trackB}
-              onSelect={handleSelectB}
-              onClear={handleClearB}
-            />
+            <div className="min-w-0">
+              <TrackSearch
+                label="Track 2"
+                accentColor="blue"
+                selectedTrack={trackB}
+                onSelect={handleSelectB}
+                onClear={handleClearB}
+                bpm={analysis.featuresB?.bpm}
+                musicalKey={analysis.featuresB?.musical_key}
+              />
+            </div>
           </div>
 
           {!trackA && !trackB && (
@@ -272,8 +301,6 @@ export default function Home() {
               </h2>
             </div>
             <CompatibilityCard
-              trackA={trackA}
-              trackB={trackB}
               featuresA={analysis.featuresA!}
               featuresB={analysis.featuresB!}
             />
@@ -282,10 +309,18 @@ export default function Home() {
 
         <footer className="text-center space-y-1 pb-2">
           <p className="text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
-            Track data powered by Spotify &mdash; BPM and key via GetSongBPM
+            Track data powered by Spotify &mdash;{" "}
+            {formatBpmKeySourceLabel(analysis.featuresA, analysis.featuresB)}
           </p>
           <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.15)" }}>
-            BPM data powered by{" "}
+            <a
+              href="/api/auth/spotify"
+              className="underline decoration-white/10 underline-offset-2 transition-colors hover:decoration-white/25"
+              style={{ color: "rgba(255,255,255,0.25)" }}
+            >
+              Connect Spotify
+            </a>
+            {" "}for recently played suggestions &middot; BPM data powered by{" "}
             <a
               href="https://getsongbpm.com"
               target="_blank"

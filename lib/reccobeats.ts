@@ -1,11 +1,13 @@
 /**
- * ReccoBeats audio features API — no API key required.
- * GET https://api.reccobeats.com/v1/audio-features?ids={spotifyId1},{spotifyId2}
+ * ReccoBeats API — no API key required.
+ * - Audio features: GET https://api.reccobeats.com/v1/audio-features?ids={spotifyIds}
+ * - Track metadata: GET https://api.reccobeats.com/v1/track?ids={spotifyIds}
  */
 import { getCamelotKey, type CamelotKey } from "@/lib/camelot";
 import type { AudioAnalysis } from "@/lib/audio-analysis";
 
-const API_URL = "https://api.reccobeats.com/v1/audio-features";
+const AUDIO_FEATURES_URL = "https://api.reccobeats.com/v1/audio-features";
+const TRACK_URL = "https://api.reccobeats.com/v1/track";
 
 interface ReccoBeatsFeature {
   id?: string;
@@ -13,11 +15,38 @@ interface ReccoBeatsFeature {
   tempo?: number;
   key?: number;
   mode?: number;
+  popularity?: number;
+}
+
+interface ReccoBeatsTrackArtist {
+  name?: string;
+  href?: string;
+  genres?: string[];
+}
+
+interface ReccoBeatsTrack {
+  href?: string;
+  popularity?: number;
+  genres?: string[];
+  artists?: ReccoBeatsTrackArtist[];
+}
+
+export interface ReccoBeatsTrackData {
+  analysis: AudioAnalysis | null;
+  popularity: number | null;
+  genres: string[];
 }
 
 function spotifyIdFromHref(href: string): string | null {
   const match = href.match(/track\/([a-zA-Z0-9]+)/);
   return match?.[1] ?? null;
+}
+
+function parsePopularity(value: number | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  if (rounded < 0 || rounded > 100) return null;
+  return rounded;
 }
 
 function featureToAnalysis(feature: ReccoBeatsFeature): AudioAnalysis {
@@ -38,17 +67,28 @@ function featureToAnalysis(feature: ReccoBeatsFeature): AudioAnalysis {
     musicalKey: camelot?.musicalKey ?? null,
     camelot,
     source: "reccobeats",
+    popularity: parsePopularity(feature.popularity),
+    genres: [],
   };
 }
 
-export async function fetchReccoBeatsBySpotifyIds(
-  spotifyIds: string[]
-): Promise<Map<string, AudioAnalysis>> {
-  const result = new Map<string, AudioAnalysis>();
-  const uniqueIds = [...new Set(spotifyIds.map((id) => id.trim()).filter(Boolean))];
-  if (uniqueIds.length === 0) return result;
+function extractGenres(track: ReccoBeatsTrack): string[] {
+  const fromTrack = track.genres ?? [];
+  const fromArtists = (track.artists ?? []).flatMap((artist) => artist.genres ?? []);
+  return [...new Set([...fromTrack, ...fromArtists].map((g) => g.trim()).filter(Boolean))];
+}
 
-  const url = `${API_URL}?ids=${uniqueIds.map(encodeURIComponent).join(",")}`;
+function emptyTrackData(): ReccoBeatsTrackData {
+  return { analysis: null, popularity: null, genres: [] };
+}
+
+async function fetchReccoBeatsTrackMetadata(
+  spotifyIds: string[]
+): Promise<Map<string, { popularity: number | null; genres: string[] }>> {
+  const result = new Map<string, { popularity: number | null; genres: string[] }>();
+  if (spotifyIds.length === 0) return result;
+
+  const url = `${TRACK_URL}?ids=${spotifyIds.map(encodeURIComponent).join(",")}`;
 
   try {
     const res = await fetch(url, {
@@ -57,28 +97,100 @@ export async function fetchReccoBeatsBySpotifyIds(
     });
 
     if (!res.ok) {
-      console.warn("[reccobeats] Request failed:", { status: res.status, count: uniqueIds.length });
+      console.warn("[reccobeats] Track metadata request failed:", { status: res.status });
       return result;
     }
 
-    const data = (await res.json()) as { content?: ReccoBeatsFeature[] };
+    const data = (await res.json()) as { content?: ReccoBeatsTrack[] };
+    for (const track of data.content ?? []) {
+      const spotifyId = track.href ? spotifyIdFromHref(track.href) : null;
+      if (!spotifyId) continue;
+      result.set(spotifyId, {
+        popularity: parsePopularity(track.popularity),
+        genres: extractGenres(track),
+      });
+    }
+  } catch (err) {
+    console.error("[reccobeats] Track metadata error:", err);
+  }
+
+  return result;
+}
+
+export async function fetchReccoBeatsBySpotifyIds(
+  spotifyIds: string[]
+): Promise<Map<string, ReccoBeatsTrackData>> {
+  const result = new Map<string, ReccoBeatsTrackData>();
+  const uniqueIds = [...new Set(spotifyIds.map((id) => id.trim()).filter(Boolean))];
+  if (uniqueIds.length === 0) return result;
+
+  for (const id of uniqueIds) {
+    result.set(id, emptyTrackData());
+  }
+
+  const audioUrl = `${AUDIO_FEATURES_URL}?ids=${uniqueIds.map(encodeURIComponent).join(",")}`;
+
+  try {
+    const [audioRes, metadataMap] = await Promise.all([
+      fetch(audioUrl, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      }),
+      fetchReccoBeatsTrackMetadata(uniqueIds),
+    ]);
+
+    for (const [spotifyId, metadata] of metadataMap) {
+      const entry = result.get(spotifyId) ?? emptyTrackData();
+      entry.popularity = metadata.popularity;
+      entry.genres = metadata.genres;
+      result.set(spotifyId, entry);
+    }
+
+    if (!audioRes.ok) {
+      console.warn("[reccobeats] Audio features request failed:", {
+        status: audioRes.status,
+        count: uniqueIds.length,
+      });
+      return result;
+    }
+
+    const data = (await audioRes.json()) as { content?: ReccoBeatsFeature[] };
     for (const feature of data.content ?? []) {
       const spotifyId = feature.href ? spotifyIdFromHref(feature.href) : null;
       if (!spotifyId) continue;
 
       const analysis = featureToAnalysis(feature);
+      const entry = result.get(spotifyId) ?? emptyTrackData();
+
+      if (analysis.popularity == null && entry.popularity != null) {
+        analysis.popularity = entry.popularity;
+      } else if (analysis.popularity != null && entry.popularity == null) {
+        entry.popularity = analysis.popularity;
+      }
+
+      if (entry.genres.length > 0) {
+        analysis.genres = entry.genres;
+      }
+
       if (analysis.bpm != null || analysis.camelot != null) {
-        result.set(spotifyId, analysis);
+        entry.analysis = analysis;
         console.log("[reccobeats] Match:", {
           spotifyId,
           bpm: analysis.bpm,
           key: analysis.musicalKey,
           camelot: analysis.camelot?.label,
+          popularity: entry.popularity ?? analysis.popularity,
+          genres: entry.genres,
         });
       }
+
+      result.set(spotifyId, entry);
     }
 
-    if (result.size === 0) {
+    const withData = [...result.values()].filter(
+      (entry) => entry.analysis != null || entry.popularity != null || entry.genres.length > 0
+    );
+    if (withData.length === 0) {
       console.log("[reccobeats] No features returned for ids:", uniqueIds);
     }
   } catch (err) {

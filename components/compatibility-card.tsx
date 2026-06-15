@@ -6,14 +6,17 @@ import {
   getDurationCompatibility,
   getGenreCompatibility,
   getKeyCompatibility,
+  getKeyCompatStyle,
   getPopularityCompatibility,
   getReleaseDateCompatibility,
+  getMixingTip,
   getOverallCompatibilityFromTrackData,
 } from "@/lib/camelot";
 import { CamelotWheel } from "@/components/camelot-wheel";
-import { TrackResult } from "@/components/track-search";
 import { cn } from "@/lib/utils";
-import { Activity, Clock, Tag, TrendingUp, Calendar, Music2, Zap, KeyRound } from "lucide-react";
+import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb } from "lucide-react";
+
+export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
 
 export interface TrackFeatures {
   popularity: number;
@@ -24,13 +27,20 @@ export interface TrackFeatures {
   bpm: number | null;
   musical_key: string | null;
   camelot: CamelotKey | null;
+  source: AudioAnalysisSource;
 }
 
 interface CompatibilityCardProps {
-  trackA: TrackResult;
-  trackB: TrackResult;
   featuresA: TrackFeatures;
   featuresB: TrackFeatures;
+}
+
+function getScoreStyle(score: number): { color: string; label: string } {
+  if (score >= 90) return { color: "#15803d", label: "Highly Compatible" };
+  if (score >= 70) return { color: "#22c55e", label: "Compatible" };
+  if (score >= 50) return { color: "#eab308", label: "Moderate" };
+  if (score >= 30) return { color: "#f97316", label: "Borderline" };
+  return { color: "#ef4444", label: "Incompatible" };
 }
 
 // ─── Score Ring ────────────────────────────────────────────────────────────────
@@ -39,15 +49,7 @@ function ScoreRing({ score, size = 140 }: { score: number; size?: number }) {
   const r = (size - 20) / 2;
   const circ = 2 * Math.PI * r;
   const progress = (score / 100) * circ;
-  const color =
-    score >= 80 ? "#a855f7" :
-    score >= 60 ? "#3b82f6" :
-    score >= 40 ? "#f59e0b" :
-    "#ef4444";
-  const label =
-    score >= 80 ? "Highly Compatible" :
-    score >= 60 ? "Compatible" :
-    score >= 40 ? "Borderline" : "Incompatible";
+  const { color, label } = getScoreStyle(score);
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -80,15 +82,22 @@ function StatRow({
   score,
   valueA,
   valueB,
+  badgeText,
+  badgeStyle,
 }: {
   label: string;
   icon: React.ElementType;
   score: number;
   valueA: React.ReactNode;
   valueB: React.ReactNode;
+  badgeText?: string;
+  badgeStyle?: { color: string; bg: string; border: string };
 }) {
   const compatible = score >= 70;
   const neutral = score >= 50 && score < 70;
+  const barColor = badgeStyle?.color ?? (compatible ? "#10b981" : neutral ? "#f59e0b" : "#ef4444");
+  const badgeLabel = badgeText ?? (compatible ? "Compatible" : neutral ? "Moderate" : "Divergent");
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
@@ -96,34 +105,47 @@ function StatRow({
           <Icon className="size-4" />
           <span>{label}</span>
         </div>
-        <div className={cn(
-          "text-xs px-2 py-0.5 rounded-full border font-medium",
-          compatible
-            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-            : neutral
-            ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-            : "bg-red-500/10 text-red-400 border-red-500/20"
-        )}>
-          {compatible ? "Compatible" : neutral ? "Moderate" : "Divergent"}
-        </div>
+        {badgeStyle ? (
+          <span
+            className="text-xs px-2 py-0.5 rounded-full border font-medium"
+            style={{
+              color: badgeStyle.color,
+              backgroundColor: badgeStyle.bg,
+              borderColor: badgeStyle.border,
+            }}
+          >
+            {badgeLabel}
+          </span>
+        ) : (
+          <div className={cn(
+            "text-xs px-2 py-0.5 rounded-full border font-medium",
+            compatible
+              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+              : neutral
+              ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              : "bg-red-500/10 text-red-400 border-red-500/20"
+          )}>
+            {badgeLabel}
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <div className="flex-1 flex items-center gap-2 justify-end">
-          <span className="text-xs font-mono text-[#c084fc] truncate max-w-[120px] text-right">{valueA}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2 justify-end overflow-hidden">
+          <span className="text-xs font-mono text-[#c084fc] truncate text-right w-full">{valueA}</span>
         </div>
-        <div className="w-24 h-1.5 rounded-full bg-white/5 overflow-hidden relative">
+        <div className="w-24 h-1.5 rounded-full bg-white/5 overflow-hidden relative flex-shrink-0">
           <div
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
               width: `${score}%`,
-              background: compatible ? "#10b981" : neutral ? "#f59e0b" : "#ef4444",
-              boxShadow: `0 0 4px ${compatible ? "#10b981" : neutral ? "#f59e0b" : "#ef4444"}`,
+              background: barColor,
+              boxShadow: `0 0 4px ${barColor}`,
               transition: "width 0.8s ease",
             }}
           />
         </div>
-        <div className="flex-1 flex items-center gap-2">
-          <span className="text-xs font-mono text-[#93c5fd] truncate max-w-[120px]">{valueB}</span>
+        <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
+          <span className="text-xs font-mono text-[#93c5fd] truncate w-full">{valueB}</span>
         </div>
       </div>
     </div>
@@ -144,8 +166,6 @@ function formatReleaseDate(date: string | null): string {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function CompatibilityCard({
-  trackA,
-  trackB,
   featuresA,
   featuresB,
 }: CompatibilityCardProps) {
@@ -181,37 +201,11 @@ export function CompatibilityCard({
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   }
 
-  const durDiff = Math.abs(featuresA.duration_ms - featuresB.duration_ms);
-  const durClose = durDiff < 30_000;
+  const mixingTip = keyCompat ? getMixingTip(keyCompat) : null;
+  const keyCompatStyle = keyCompat ? getKeyCompatStyle(keyCompat.type) : null;
 
   return (
     <div className="flex flex-col gap-6">
-
-      {/* Track header cards */}
-      <div className="grid grid-cols-2 gap-3">
-        {([
-          { track: trackA, color: "#a855f7" },
-          { track: trackB, color: "#3b82f6" },
-        ] as const).map(({ track, color }) => (
-          <div
-            key={track.id}
-            className="flex items-center gap-3 p-3 rounded-xl border bg-surface-raised"
-            style={{ borderColor: `${color}30` }}
-          >
-            {track.image ? (
-              <img src={track.image} alt={track.album} className="size-10 rounded-lg object-cover flex-shrink-0" />
-            ) : (
-              <div className="size-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                <Music2 className="size-4 text-muted-foreground" />
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-xs font-bold truncate" style={{ color }}>{track.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
-            </div>
-          </div>
-        ))}
-      </div>
 
       {/* Score + Camelot wheel */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
@@ -229,9 +223,17 @@ export function CompatibilityCard({
           ) : (
             <CamelotWheel disabled comingSoonNote="BPM and key unavailable for one or both tracks" />
           )}
-          {keyCompat && (
-            <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 text-center">
-              <p className="text-sm font-semibold text-foreground">{keyCompat.label}</p>
+          {keyCompat && keyCompatStyle && (
+            <div
+              className="rounded-xl border px-4 py-3 text-center"
+              style={{
+                backgroundColor: keyCompatStyle.bg,
+                borderColor: keyCompatStyle.border,
+              }}
+            >
+              <p className="text-sm font-semibold" style={{ color: keyCompatStyle.color }}>
+                {keyCompat.label}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">{keyCompat.description}</p>
             </div>
           )}
@@ -297,6 +299,8 @@ export function CompatibilityCard({
           label="Musical Key"
           icon={KeyRound}
           score={keyCompat?.score ?? 50}
+          badgeText={keyCompat?.label}
+          badgeStyle={keyCompatStyle ?? undefined}
           valueA={
             featuresA.camelot
               ? `${featuresA.camelot.label} (${featuresA.camelot.musicalKey})`
@@ -314,29 +318,25 @@ export function CompatibilityCard({
       {(featuresA.genres.length > 0 || featuresB.genres.length > 0) && (
         <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex flex-col gap-2">
           <p className="text-xs font-semibold text-muted-foreground">Artist Genres</p>
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <p className="text-[#c084fc] truncate">{featuresA.genres.join(", ") || "—"}</p>
-            <p className="text-[#93c5fd] truncate">{featuresB.genres.join(", ") || "—"}</p>
+          <div className="grid grid-cols-2 gap-3 text-xs min-w-0">
+            <p className="text-[#c084fc] truncate min-w-0 overflow-hidden">{featuresA.genres.join(", ") || "—"}</p>
+            <p className="text-[#93c5fd] truncate min-w-0 overflow-hidden">{featuresB.genres.join(", ") || "—"}</p>
           </div>
         </div>
       )}
 
-      {/* Duration detail */}
-      <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Clock className="size-3.5" />
-          <span>Duration difference</span>
+      {/* Mixing tip */}
+      <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex flex-col gap-2">
+        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+          <Lightbulb className="size-3.5" />
+          <span>Mixing Tip</span>
         </div>
-        <span className={cn(
-          "text-xs font-mono font-semibold px-2 py-0.5 rounded-full border",
-          durClose
-            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-        )}>
-          {durClose
-            ? `${Math.round(durDiff / 1000)}s apart`
-            : `${Math.floor(durDiff / 60000)}m ${Math.round((durDiff % 60000) / 1000)}s apart`}
-        </span>
+        <p
+          className={cn("text-sm", !keyCompatStyle && "text-muted-foreground")}
+          style={keyCompatStyle ? { color: keyCompatStyle.color } : undefined}
+        >
+          {mixingTip ?? "BPM and key data needed for a mixing tip."}
+        </p>
       </div>
 
     </div>

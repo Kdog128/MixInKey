@@ -12,6 +12,7 @@ export interface TrackFeatures {
   bpm: number | null;
   musical_key: string | null;
   camelot: CamelotKey | null;
+  source: "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
 }
 
 interface ClientTrackInput {
@@ -68,7 +69,7 @@ async function fetchArtistGenres(
 async function resolveSpotifyFeatures(
   tracks: ClientTrackInput[],
   headers: Record<string, string>
-): Promise<Omit<TrackFeatures, "bpm" | "musical_key" | "camelot">[]> {
+): Promise<Omit<TrackFeatures, "bpm" | "musical_key" | "camelot" | "source">[]> {
   const idList = tracks.map((t) => t.id).filter(Boolean);
 
   let spotifyTracks: Array<SpotifyTrackObject | null> = [];
@@ -149,11 +150,19 @@ async function resolveTrackFeatures(
 
   return spotifyFeatures.map((spotify, i) => {
     const audio = audioResults[i];
+    const clientPopularity = tracks[i]?.popularity;
+    const popularity =
+      audio.popularity ??
+      (spotify.popularity > 0 ? spotify.popularity : clientPopularity ?? spotify.popularity);
+
     return {
       ...spotify,
+      popularity,
+      genres: audio.genres.length > 0 ? audio.genres : spotify.genres,
       bpm: audio.bpm,
       musical_key: audio.musicalKey,
       camelot: audio.camelot,
+      source: audio.source,
     };
   });
 }

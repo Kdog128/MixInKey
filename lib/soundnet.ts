@@ -13,6 +13,8 @@ const EMPTY: AudioAnalysis = {
   musicalKey: null,
   camelot: null,
   source: null,
+  popularity: null,
+  genres: [],
 };
 
 interface SoundNetResponse {
@@ -68,6 +70,8 @@ function responseToAnalysis(data: SoundNetResponse): AudioAnalysis {
     musicalKey: camelot?.musicalKey ?? null,
     camelot,
     source: "soundnet",
+    popularity: null,
+    genres: [],
   };
 }
 
