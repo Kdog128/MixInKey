@@ -1,5 +1,5 @@
 import type { CamelotKey } from "@/lib/camelot";
-import { fetchGetSongBpmAnalysis } from "@/lib/getsongbpm";
+import { fetchGetSongBpmAnalysis, fetchGetSongBpmGenres } from "@/lib/getsongbpm";
 import { fetchTrackAudioAnalysis as fetchMusicBrainzAnalysis } from "@/lib/musicbrainz";
 import { fetchReccoBeatsBySpotifyIds } from "@/lib/reccobeats";
 import { fetchSoundNetAnalysis } from "@/lib/soundnet";
@@ -53,8 +53,40 @@ function mergeReccoMetadata(
   return {
     ...analysis,
     popularity: analysis.popularity ?? recco.popularity,
-    genres: analysis.genres.length > 0 ? analysis.genres : recco.genres,
+    genres: mergeGenreLists(analysis.genres, recco.genres),
   };
+}
+
+function mergeGenreLists(...lists: string[][]): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const list of lists) {
+    for (const genre of list) {
+      const key = genre.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(genre);
+    }
+  }
+  return merged;
+}
+
+async function enrichWithGetSongBpmGenres(
+  track: TrackAudioInput,
+  analysis: AudioAnalysis
+): Promise<AudioAnalysis> {
+  const genres = await fetchGetSongBpmGenres(track);
+  if (genres.length === 0) return analysis;
+  return { ...analysis, genres: mergeGenreLists(analysis.genres, genres) };
+}
+
+/** Always merge GetSongBPM genres unless GetSongBPM already supplied BPM/key. */
+async function finalizeAnalysis(
+  track: TrackAudioInput,
+  analysis: AudioAnalysis
+): Promise<AudioAnalysis> {
+  if (analysis.source === "getsongbpm") return analysis;
+  return enrichWithGetSongBpmGenres(track, analysis);
 }
 
 async function fetchTrackAudioAnalysisFallback(track: TrackAudioInput): Promise<AudioAnalysis> {
@@ -91,14 +123,17 @@ export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<A
     const reccoMap = await fetchReccoBeatsBySpotifyIds([track.spotify_id]);
     const recco = reccoMap.get(track.spotify_id);
     if (recco?.analysis && hasAnalysisData(recco.analysis)) {
-      return mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco);
+      return finalizeAnalysis(
+        track,
+        mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco)
+      );
     }
     if (recco && (recco.popularity != null || recco.genres.length > 0)) {
-      return mergeReccoMetadata(EMPTY_ANALYSIS, recco);
+      return finalizeAnalysis(track, mergeReccoMetadata(EMPTY_ANALYSIS, recco));
     }
   }
 
-  return fetchTrackAudioAnalysisFallback(track);
+  return finalizeAnalysis(track, await fetchTrackAudioAnalysisFallback(track));
 }
 
 export async function fetchTracksAudioAnalysis(
@@ -108,16 +143,19 @@ export async function fetchTracksAudioAnalysis(
     tracks.map((t) => t.spotify_id).filter((id): id is string => Boolean(id))
   );
 
-  const results: AudioAnalysis[] = [];
-  for (const track of tracks) {
-    const recco = track.spotify_id ? reccoMap.get(track.spotify_id) : undefined;
-    if (recco?.analysis && hasAnalysisData(recco.analysis)) {
-      results.push(mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco));
-      continue;
-    }
+  return Promise.all(
+    tracks.map(async (track) => {
+      const recco = track.spotify_id ? reccoMap.get(track.spotify_id) : undefined;
 
-    const fallback = await fetchTrackAudioAnalysisFallback(track);
-    results.push(mergeReccoMetadata(fallback, recco));
-  }
-  return results;
+      if (recco?.analysis && hasAnalysisData(recco.analysis)) {
+        return finalizeAnalysis(
+          track,
+          mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco)
+        );
+      }
+
+      const fallback = await fetchTrackAudioAnalysisFallback(track);
+      return finalizeAnalysis(track, mergeReccoMetadata(fallback, recco));
+    })
+  );
 }

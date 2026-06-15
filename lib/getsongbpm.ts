@@ -227,53 +227,75 @@ async function searchGetSong(
 }
 
 export async function fetchGetSongBpmAnalysis(track: GetSongBpmTrackInput): Promise<AudioAnalysis> {
+  const match = await resolveGetSongMatch(track);
+  if (!match) return EMPTY;
+
+  const analysis = resultToAnalysis(match);
+  if (analysis.bpm == null && analysis.musicalKey == null) {
+    console.log("[getsongbpm] Match found but no BPM/key:", {
+      artist: track.artist,
+      title: track.title,
+      id: match.id,
+      genres: analysis.genres,
+    });
+    return EMPTY;
+  }
+
+  console.log("[getsongbpm] Match:", {
+    title: match.title,
+    artist: artistNames(match).join(", "),
+    bpm: analysis.bpm,
+    key: analysis.musicalKey,
+    genres: analysis.genres,
+  });
+  return analysis;
+}
+
+/** Genre lookup only — used when another source already supplies BPM/key. */
+export async function fetchGetSongBpmGenres(track: GetSongBpmTrackInput): Promise<string[]> {
+  const match = await resolveGetSongMatch(track);
+  if (!match) return [];
+
+  const genres = extractGenresFromResult(match);
+  if (genres.length > 0) {
+    console.log("[getsongbpm] Genres:", {
+      title: match.title,
+      artist: artistNames(match).join(", "),
+      genres,
+    });
+  }
+  return genres;
+}
+
+async function resolveGetSongMatch(track: GetSongBpmTrackInput): Promise<GetSongSearchResult | null> {
   const apiKey = getApiKey();
   const artist = primaryArtist(track.artist).trim();
   const title = normalizeTitle(track.title).trim();
 
   if (!apiKey) {
     console.warn("[getsongbpm] GETSONGBPM_API_KEY is not set");
-    return EMPTY;
+    return null;
   }
-  if (!artist || !title) return EMPTY;
+  if (!artist || !title) return null;
 
   try {
     const combinedLookup = `song:${title} artist:${artist}`;
     let items = await searchGetSong(apiKey, combinedLookup, "both");
-    let matchedVia = items.length > 0 ? "both:song+artist (space)" : null;
 
     if (items.length === 0) {
       console.log("[getsongbpm] Combined lookup empty, trying title-only search:", { artist, title });
       const titleResults = await searchGetSong(apiKey, title, "song");
       items = filterByArtist(titleResults, artist);
-      if (items.length > 0) matchedVia = "song:title-only + artist filter";
     }
 
     if (items.length === 0) {
       console.log("[getsongbpm] No results for:", { artist, title });
-      return EMPTY;
+      return null;
     }
 
-    const match = pickBestMatch(items, artist, title);
-    if (!match) return EMPTY;
-
-    const analysis = resultToAnalysis(match);
-    if (analysis.bpm == null && analysis.musicalKey == null) {
-      console.log("[getsongbpm] Match found but no BPM/key:", { artist, title, id: match.id });
-      return EMPTY;
-    }
-
-    console.log("[getsongbpm] Match:", {
-      via: matchedVia,
-      title: match.title,
-      artist: artistNames(match).join(", "),
-      bpm: analysis.bpm,
-      key: analysis.musicalKey,
-      genres: analysis.genres,
-    });
-    return analysis;
+    return pickBestMatch(items, artist, title);
   } catch (err) {
     console.error("[getsongbpm] Request error:", err);
-    return EMPTY;
+    return null;
   }
 }

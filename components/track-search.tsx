@@ -182,7 +182,6 @@ export function TrackSearch({
       border: "focus-within:border-[#a855f7]/60",
       label: "text-[#a855f7]",
       badge: "bg-[#a855f7]/20 text-[#c084fc] border-[#a855f7]/30",
-      dot: "bg-[#a855f7]",
       hover: "hover:bg-[#a855f7]/10",
     },
     blue: {
@@ -190,7 +189,6 @@ export function TrackSearch({
       border: "focus-within:border-[#3b82f6]/60",
       label: "text-[#60a5fa]",
       badge: "bg-[#3b82f6]/20 text-[#93c5fd] border-[#3b82f6]/30",
-      dot: "bg-[#3b82f6]",
       hover: "hover:bg-[#3b82f6]/10",
     },
   }[accentColor];
@@ -198,75 +196,86 @@ export function TrackSearch({
   return (
     <div className="flex flex-col gap-2 min-w-0 w-full" ref={containerRef}>
       {/* Label */}
-      <div className="flex items-center gap-2">
-        <div className={cn("size-2 rounded-full", accentStyles.dot)} />
-        <span className={cn("text-sm font-semibold tracking-wide uppercase", accentStyles.label)}>
-          {label}
-        </span>
-      </div>
+      <span
+        className={cn(
+          "text-sm font-semibold tracking-wide uppercase",
+          selectedTrack ? "text-muted-foreground" : accentStyles.label
+        )}
+      >
+        {label}
+      </span>
 
       {selectedTrack ? (
         /* Selected state */
-        <div
-          className={cn(
-            "flex items-center gap-3 p-3 rounded-xl border bg-surface-raised min-w-0 w-full overflow-hidden",
-            accentColor === "purple"
-              ? "border-[#a855f7]/30 shadow-[0_0_12px_rgba(168,85,247,0.1)]"
-              : "border-[#3b82f6]/30 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
-          )}
-        >
+        <div className="relative flex items-center gap-3 p-3 rounded-xl border border-border min-w-0 w-full overflow-hidden">
           {selectedTrack.image ? (
-            <img
-              src={selectedTrack.image}
-              alt={`${selectedTrack.album} album art`}
-              className="size-12 rounded-lg object-cover flex-shrink-0"
-            />
+            <>
+              <img
+                src={selectedTrack.image}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover blur-md opacity-25 scale-110"
+              />
+              <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
+            </>
           ) : (
-            <div className="size-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-              <Music className="size-5 text-muted-foreground" />
-            </div>
+            <div className="absolute inset-0 bg-surface-raised" aria-hidden="true" />
           )}
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <p
-              className="font-semibold text-sm truncate text-foreground"
-              title={selectedTrack.name}
-            >
-              {selectedTrack.name}
-            </p>
-            <p
-              className="text-xs text-muted-foreground truncate"
-              title={selectedTrack.artist}
-            >
-              {selectedTrack.artist}
-            </p>
-            <p
-              className="text-xs text-muted-foreground/60 truncate"
-              title={selectedTrack.album}
-            >
-              {selectedTrack.album}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleFavoriteClick}
-            aria-label={favorited ? "Remove from favorites" : "Save to favorites"}
-            aria-pressed={favorited}
-            className={cn(
-              "flex-shrink-0 size-7 rounded-full flex items-center justify-center transition-colors",
-              favorited
-                ? "text-rose-400 hover:text-rose-300 hover:bg-rose-400/10"
-                : "text-muted-foreground hover:text-rose-400 hover:bg-white/10"
+
+          <div className="relative z-10 flex items-center gap-3 min-w-0 w-full">
+            {selectedTrack.image ? (
+              <img
+                src={selectedTrack.image}
+                alt={`${selectedTrack.album} album art`}
+                className="size-10 rounded-md object-cover flex-shrink-0 ring-1 ring-white/10"
+              />
+            ) : (
+              <div className="size-10 rounded-md bg-muted flex items-center justify-center flex-shrink-0 ring-1 ring-white/10">
+                <Music className="size-4 text-muted-foreground" />
+              </div>
             )}
-          >
-            <Heart className={cn("size-4", favorited && "fill-current")} />
-          </button>
-          <button
-            onClick={onClear}
-            aria-label="Remove track"
-            className="flex-shrink-0 size-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
-          >
-            <X className="size-4" />
-          </button>
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <p
+                className="font-semibold text-sm truncate text-foreground"
+                title={selectedTrack.name}
+              >
+                {selectedTrack.name}
+              </p>
+              <p
+                className="text-xs text-muted-foreground truncate"
+                title={selectedTrack.artist}
+              >
+                {selectedTrack.artist}
+              </p>
+              <p
+                className="text-xs text-muted-foreground/70 truncate"
+                title={selectedTrack.album}
+              >
+                {selectedTrack.album}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleFavoriteClick}
+              aria-label={favorited ? "Remove from favorites" : "Save to favorites"}
+              aria-pressed={favorited}
+              className={cn(
+                "flex-shrink-0 size-7 rounded-full flex items-center justify-center transition-colors",
+                favorited
+                  ? "text-rose-400 hover:text-rose-300 hover:bg-white/10"
+                  : "text-muted-foreground hover:text-rose-400 hover:bg-white/10"
+              )}
+            >
+              <Heart className={cn("size-4", favorited && "fill-current")} />
+            </button>
+            <button
+              onClick={onClear}
+              aria-label="Remove track"
+              className="flex-shrink-0 size-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
         </div>
       ) : (
         /* Search input + dropdown */
