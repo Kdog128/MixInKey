@@ -1,12 +1,12 @@
 import type { CamelotKey } from "@/lib/camelot";
+import { fetchGetSongBpmAnalysis } from "@/lib/getsongbpm";
 import { fetchTrackAudioAnalysis as fetchMusicBrainzAnalysis } from "@/lib/musicbrainz";
-import { fetchTunebatAnalysis } from "@/lib/tunebat";
 
 export interface AudioAnalysis {
   bpm: number | null;
   musicalKey: string | null;
   camelot: CamelotKey | null;
-  source: "tunebat" | "musicbrainz" | null;
+  source: "getsongbpm" | "musicbrainz" | null;
 }
 
 const EMPTY_ANALYSIS: AudioAnalysis = {
@@ -32,8 +32,8 @@ function hasAnalysisData(analysis: {
 }
 
 export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<AudioAnalysis> {
-  const tunebat = await fetchTunebatAnalysis(track);
-  if (hasAnalysisData(tunebat)) return tunebat;
+  const getsong = await fetchGetSongBpmAnalysis(track);
+  if (hasAnalysisData(getsong)) return getsong;
 
   const mb = await fetchMusicBrainzAnalysis({
     artist: track.artist,

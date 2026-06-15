@@ -147,7 +147,7 @@ export default function Home() {
               DJ Mix Compatibility
             </h1>
             <p className="mt-2 text-muted-foreground text-pretty max-w-md mx-auto text-sm leading-relaxed">
-              Search two Spotify tracks to compare popularity, duration, genres, and release date — plus BPM and key from Tunebat.
+              Search two Spotify tracks to compare popularity, duration, genres, and release date — plus BPM and key from GetSongBPM.
             </p>
           </div>
         </header>
@@ -230,7 +230,7 @@ export default function Home() {
             <div className="text-center">
               <p className="text-sm font-medium text-foreground">Analyzing tracks&hellip;</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Fetching Spotify metadata and Tunebat BPM/key analysis
+                Fetching Spotify metadata and GetSongBPM analysis
               </p>
             </div>
           </div>
@@ -282,7 +282,7 @@ export default function Home() {
 
         <footer className="text-center space-y-1 pb-2">
           <p className="text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
-            Track data powered by Spotify &mdash; BPM and key via Tunebat
+            Track data powered by Spotify &mdash; BPM and key via GetSongBPM
           </p>
           <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.15)" }}>
             BPM data powered by{" "}
