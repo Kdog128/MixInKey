@@ -1,12 +1,14 @@
 import type { CamelotKey } from "@/lib/camelot";
 import { fetchGetSongBpmAnalysis } from "@/lib/getsongbpm";
 import { fetchTrackAudioAnalysis as fetchMusicBrainzAnalysis } from "@/lib/musicbrainz";
+import { fetchReccoBeatsBySpotifyIds } from "@/lib/reccobeats";
+import { fetchSoundNetAnalysis } from "@/lib/soundnet";
 
 export interface AudioAnalysis {
   bpm: number | null;
   musicalKey: string | null;
   camelot: CamelotKey | null;
-  source: "getsongbpm" | "musicbrainz" | null;
+  source: "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
 }
 
 const EMPTY_ANALYSIS: AudioAnalysis = {
@@ -31,9 +33,14 @@ function hasAnalysisData(analysis: {
   return analysis.bpm != null || analysis.camelot != null || analysis.musicalKey != null;
 }
 
-export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<AudioAnalysis> {
+async function fetchTrackAudioAnalysisFallback(track: TrackAudioInput): Promise<AudioAnalysis> {
   const getsong = await fetchGetSongBpmAnalysis(track);
   if (hasAnalysisData(getsong)) return getsong;
+
+  if (track.spotify_id) {
+    const soundnet = await fetchSoundNetAnalysis(track.spotify_id);
+    if (hasAnalysisData(soundnet)) return soundnet;
+  }
 
   const mb = await fetchMusicBrainzAnalysis({
     artist: track.artist,
@@ -53,12 +60,31 @@ export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<A
   return EMPTY_ANALYSIS;
 }
 
+export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<AudioAnalysis> {
+  if (track.spotify_id) {
+    const reccoMap = await fetchReccoBeatsBySpotifyIds([track.spotify_id]);
+    const recco = reccoMap.get(track.spotify_id);
+    if (recco && hasAnalysisData(recco)) return recco;
+  }
+
+  return fetchTrackAudioAnalysisFallback(track);
+}
+
 export async function fetchTracksAudioAnalysis(
   tracks: TrackAudioInput[]
 ): Promise<AudioAnalysis[]> {
+  const reccoMap = await fetchReccoBeatsBySpotifyIds(
+    tracks.map((t) => t.spotify_id).filter((id): id is string => Boolean(id))
+  );
+
   const results: AudioAnalysis[] = [];
   for (const track of tracks) {
-    results.push(await fetchTrackAudioAnalysis(track));
+    const recco = track.spotify_id ? reccoMap.get(track.spotify_id) : undefined;
+    if (recco && hasAnalysisData(recco)) {
+      results.push(recco);
+    } else {
+      results.push(await fetchTrackAudioAnalysisFallback(track));
+    }
   }
   return results;
 }
