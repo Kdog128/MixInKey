@@ -173,14 +173,14 @@ export function getKeyCompatStyle(type: CompatibilityType): KeyCompatStyle {
     case "perfect":
     case "relative":
     case "compatible":
-    case "energy_boost":
-    case "energy_drop":
       return {
         color: "#22c55e",
         bg: "rgba(34, 197, 94, 0.1)",
         border: "rgba(34, 197, 94, 0.2)",
       };
     case "adjacent":
+    case "energy_boost":
+    case "energy_drop":
       return {
         color: "#eab308",
         bg: "rgba(234, 179, 8, 0.1)",
@@ -193,6 +193,146 @@ export function getKeyCompatStyle(type: CompatibilityType): KeyCompatStyle {
         border: "rgba(239, 68, 68, 0.2)",
       };
   }
+}
+
+/** Short hover tooltip for mix compatibility badges in the Set Planner. */
+export function getMixBadgeTooltip(type: CompatibilityType): string {
+  switch (type) {
+    case "perfect":
+      return "Identical key — seamless mix";
+    case "relative":
+      return "Major/minor pair — highly compatible";
+    case "energy_boost":
+      return "One step clockwise on the Camelot wheel — adds energy";
+    case "energy_drop":
+      return "One step counter-clockwise — reduces energy";
+    case "adjacent":
+      return "One position away — smooth transition";
+    case "compatible":
+      return "Moderate harmonic distance — keep the transition brief";
+    case "incompatible":
+      return "Keys too far apart — use a transition track";
+  }
+}
+
+export type BpmDirection = "rising" | "falling" | "steady" | "unknown";
+
+export interface TransitionTrackInput {
+  bpm: number | null;
+  camelot_label: string | null;
+  musical_key?: string | null;
+}
+
+export interface TransitionAnalysis {
+  keyCompat: KeyCompatibility;
+  bpmDirection: BpmDirection;
+  energyLabel: string;
+  tooltip: string;
+}
+
+const BPM_STEADY_THRESHOLD = 2;
+
+function resolveTransitionCamelotKey(track: TransitionTrackInput): CamelotKey | null {
+  if (track.camelot_label) {
+    return parseMusicalKeyString(track.camelot_label);
+  }
+  if (track.musical_key) {
+    return parseMusicalKeyString(track.musical_key);
+  }
+  return null;
+}
+
+/** BPM trend from track A into track B. Steady when within 2 BPM. */
+export function getBpmDirection(
+  bpmA: number | null,
+  bpmB: number | null
+): BpmDirection {
+  if (bpmA == null || bpmB == null) return "unknown";
+  const diff = bpmB - bpmA;
+  if (Math.abs(diff) <= BPM_STEADY_THRESHOLD) return "steady";
+  return diff > 0 ? "rising" : "falling";
+}
+
+function usesBpmEnergyLabel(type: CompatibilityType): boolean {
+  return type === "perfect" || type === "relative" || type === "compatible";
+}
+
+function getCombinedEnergyLabel(
+  keyCompat: KeyCompatibility,
+  bpmDirection: BpmDirection
+): string {
+  if (keyCompat.type === "incompatible") {
+    return keyCompat.label;
+  }
+  if (usesBpmEnergyLabel(keyCompat.type)) {
+    if (bpmDirection === "rising") return "Building Energy";
+    if (bpmDirection === "falling") return "Winding Down";
+  }
+  return keyCompat.label;
+}
+
+/** Combined key + BPM tooltip for Set Planner mix badges. */
+export function getTransitionTooltip(analysis: Omit<TransitionAnalysis, "tooltip">): string {
+  const { keyCompat, bpmDirection, energyLabel } = analysis;
+
+  if (keyCompat.type === "incompatible") {
+    return "Keys too far apart — use a transition track. BPM direction won't fix a clashing mix.";
+  }
+
+  if (energyLabel === "Building Energy") {
+    const keyNote =
+      keyCompat.type === "perfect"
+        ? "Same Camelot key."
+        : keyCompat.type === "relative"
+          ? "Relative major/minor pair."
+          : "Harmonically compatible keys.";
+    return `${keyNote} BPM rises by more than 2 — builds energy into the next track.`;
+  }
+
+  if (energyLabel === "Winding Down") {
+    const keyNote =
+      keyCompat.type === "perfect"
+        ? "Same Camelot key."
+        : keyCompat.type === "relative"
+          ? "Relative major/minor pair."
+          : "Harmonically compatible keys.";
+    return `${keyNote} BPM falls by more than 2 — eases energy into the next track.`;
+  }
+
+  const keyLine = getMixBadgeTooltip(keyCompat.type);
+
+  if (bpmDirection === "unknown") {
+    return keyLine;
+  }
+
+  const bpmLine =
+    bpmDirection === "steady"
+      ? "BPM stays within 2 — energy level holds."
+      : bpmDirection === "rising"
+        ? "BPM rises to the next track — adds pace."
+        : "BPM drops to the next track — slows the groove.";
+
+  return `${keyLine} ${bpmLine}`;
+}
+
+/** Key relationship + BPM direction between two consecutive set tracks. */
+export function getTransitionAnalysis(
+  trackA: TransitionTrackInput,
+  trackB: TransitionTrackInput
+): TransitionAnalysis | null {
+  const keyA = resolveTransitionCamelotKey(trackA);
+  const keyB = resolveTransitionCamelotKey(trackB);
+  if (!keyA || !keyB) return null;
+
+  const keyCompat = getKeyCompatibility(keyA, keyB);
+  const bpmDirection = getBpmDirection(trackA.bpm, trackB.bpm);
+  const energyLabel = getCombinedEnergyLabel(keyCompat, bpmDirection);
+
+  const core = { keyCompat, bpmDirection, energyLabel };
+  return {
+    ...core,
+    tooltip: getTransitionTooltip(core),
+  };
 }
 
 /** DJ-facing mix advice from the Camelot relationship between two keys. */

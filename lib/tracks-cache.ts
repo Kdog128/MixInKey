@@ -15,6 +15,7 @@ import { createSupabaseServerClient } from "@/lib/supabase";
  *   source text,
  *   popularity integer,
  *   genres text[] default '{}',
+ *   artwork_url text,
  *   cached_at timestamptz default now()
  * );
  */
@@ -28,6 +29,7 @@ export interface TracksCacheRow {
   source: string | null;
   popularity: number | null;
   genres: string[] | null;
+  artwork_url: string | null;
   cached_at: string | null;
 }
 

@@ -14,7 +14,7 @@ import {
 } from "@/lib/camelot";
 import { CamelotWheel } from "@/components/camelot-wheel";
 import { cn } from "@/lib/utils";
-import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb } from "lucide-react";
+import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb, ListPlus } from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
 
@@ -33,6 +33,8 @@ export interface TrackFeatures {
 interface CompatibilityCardProps {
   featuresA: TrackFeatures;
   featuresB: TrackFeatures;
+  onAddToSetA?: () => void;
+  onAddToSetB?: () => void;
 }
 
 function getScoreStyle(score: number): { color: string; label: string } {
@@ -168,6 +170,8 @@ function formatReleaseDate(date: string | null): string {
 export function CompatibilityCard({
   featuresA,
   featuresB,
+  onAddToSetA,
+  onAddToSetB,
 }: CompatibilityCardProps) {
   const popScore = getPopularityCompatibility(featuresA.popularity, featuresB.popularity);
   const durScore = getDurationCompatibility(featuresA.duration_ms, featuresB.duration_ms);
@@ -321,6 +325,35 @@ export function CompatibilityCard({
           <div className="grid grid-cols-2 gap-3 text-xs min-w-0">
             <p className="text-[#c084fc] truncate min-w-0 overflow-hidden">{featuresA.genres.join(", ") || "—"}</p>
             <p className="text-[#93c5fd] truncate min-w-0 overflow-hidden">{featuresB.genres.join(", ") || "—"}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Add to set */}
+      {(onAddToSetA || onAddToSetB) && (
+        <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex flex-col gap-3">
+          <p className="text-xs font-semibold text-muted-foreground">Set Planner</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {onAddToSetA && (
+              <button
+                type="button"
+                onClick={onAddToSetA}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#a855f7]/30 bg-[#a855f7]/10 px-3 py-2 text-xs font-semibold text-[#c084fc] transition-colors hover:bg-[#a855f7]/20"
+              >
+                <ListPlus className="size-3.5" />
+                Add Track 1 to Set
+              </button>
+            )}
+            {onAddToSetB && (
+              <button
+                type="button"
+                onClick={onAddToSetB}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#3b82f6]/30 bg-[#3b82f6]/10 px-3 py-2 text-xs font-semibold text-[#93c5fd] transition-colors hover:bg-[#3b82f6]/20"
+              >
+                <ListPlus className="size-3.5" />
+                Add Track 2 to Set
+              </button>
+            )}
           </div>
         </div>
       )}

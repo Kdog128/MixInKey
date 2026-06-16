@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Search, X, Music, Loader2, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isFavorite, toggleFavorite } from "@/lib/favorites";
+import { isFavorite, toggleFavorite, getFavorites } from "@/lib/favorites";
 
 export interface TrackResult {
   id: string;
@@ -27,6 +27,7 @@ interface TrackSearchProps {
   onClear: () => void;
   bpm?: number | null;
   musicalKey?: string | null;
+  enableFavoritesFilter?: boolean;
 }
 
 export function TrackSearch({
@@ -37,12 +38,14 @@ export function TrackSearch({
   onClear,
   bpm = null,
   musicalKey = null,
+  enableFavoritesFilter = false,
 }: TrackSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TrackResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [isRecent, setIsRecent] = useState(false);
+  const [isFavorites, setIsFavorites] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [favorited, setFavorited] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,6 +53,7 @@ export function TrackSearch({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadRecentTracks = useCallback(async () => {
+    setIsFavorites(false);
     setLoading(true);
     try {
       const res = await fetch("/api/spotify/recently-played");
@@ -57,6 +61,7 @@ export function TrackSearch({
         setResults([]);
         setOpen(false);
         setIsRecent(false);
+        setIsFavorites(false);
         return;
       }
       const data = await res.json();
@@ -83,6 +88,7 @@ export function TrackSearch({
   const search = useCallback(async (q: string) => {
     if (q.trim().length < 2) return;
     setIsRecent(false);
+    setIsFavorites(false);
     setLoading(true);
     try {
       const res = await fetch(`/api/spotify/search?q=${encodeURIComponent(q)}`);
@@ -97,7 +103,34 @@ export function TrackSearch({
     }
   }, []);
 
+  const loadFavorites = useCallback(() => {
+    setIsRecent(false);
+    setIsFavorites(true);
+    setQuery("");
+    const favorites = getFavorites();
+    const tracks: TrackResult[] = favorites.map((f) => ({
+      id: f.spotify_id,
+      name: f.name,
+      artist: f.artist,
+      artist_id: null,
+      album: "",
+      image: null,
+      preview_url: null,
+      duration_ms: 0,
+      popularity: 0,
+      explicit: false,
+      release_date: null,
+    }));
+    setResults(tracks);
+    setOpen(tracks.length > 0);
+    setFocusedIndex(-1);
+  }, []);
+
   const handleFocus = useCallback(() => {
+    if (isFavorites && results.length > 0) {
+      setOpen(true);
+      return;
+    }
     if (query.trim().length >= 2) {
       if (results.length > 0) setOpen(true);
       return;
@@ -105,7 +138,7 @@ export function TrackSearch({
     if (query.trim().length === 0) {
       void loadRecentTracks();
     }
-  }, [query, results.length, loadRecentTracks]);
+  }, [query, results.length, loadRecentTracks, isFavorites]);
 
   useEffect(() => {
     if (query.trim().length < 2) return;
@@ -152,6 +185,7 @@ export function TrackSearch({
     setOpen(false);
     setResults([]);
     setIsRecent(false);
+    setIsFavorites(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -279,7 +313,22 @@ export function TrackSearch({
         </div>
       ) : (
         /* Search input + dropdown */
-        <div className="relative">
+        <div className="relative flex flex-col gap-2">
+          {enableFavoritesFilter && (
+            <button
+              type="button"
+              onClick={loadFavorites}
+              className={cn(
+                "self-start inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+                isFavorites
+                  ? "border-rose-400/40 bg-rose-400/10 text-rose-400"
+                  : "border-border bg-surface-raised text-muted-foreground hover:text-rose-400 hover:border-rose-400/30"
+              )}
+            >
+              <Heart className={cn("size-3.5", isFavorites && "fill-current")} />
+              Favorites
+            </button>
+          )}
           <div
             className={cn(
               "flex items-center rounded-xl border bg-surface ring-2 ring-transparent transition-all",
@@ -296,7 +345,10 @@ export function TrackSearch({
             <input
               ref={inputRef}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                if (isFavorites) setIsFavorites(false);
+              }}
               onKeyDown={handleKeyDown}
               onFocus={handleFocus}
               placeholder={`Search for a track...`}
@@ -312,6 +364,7 @@ export function TrackSearch({
                   setResults([]);
                   setOpen(false);
                   setIsRecent(false);
+                  setIsFavorites(false);
                 }}
                 className="mr-2 size-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                 aria-label="Clear search"
@@ -326,9 +379,20 @@ export function TrackSearch({
             <div
               className="absolute top-full left-0 right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
               role="listbox"
-              aria-label={isRecent ? "Recently played tracks" : "Search results"}
+              aria-label={
+                isFavorites
+                  ? "Favorites"
+                  : isRecent
+                  ? "Recently played tracks"
+                  : "Search results"
+              }
             >
-              {isRecent && (
+              {isFavorites && (
+                <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-rose-400/80 border-b border-border/50">
+                  Favorites
+                </div>
+              )}
+              {isRecent && !isFavorites && (
                 <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground border-b border-border/50">
                   Recently Played
                 </div>
@@ -383,7 +447,13 @@ export function TrackSearch({
             </div>
           )}
 
-          {open && query.length >= 2 && results.length === 0 && !loading && (
+          {open && isFavorites && results.length === 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
+              <p className="text-sm text-muted-foreground">No favorites yet — heart a track to save it here.</p>
+            </div>
+          )}
+
+          {open && query.length >= 2 && results.length === 0 && !loading && !isFavorites && (
             <div className="absolute top-full left-0 right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
               <p className="text-sm text-muted-foreground">No tracks found for &ldquo;{query}&rdquo;</p>
             </div>

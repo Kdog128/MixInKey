@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Disc3, Loader2, ArrowLeftRight } from "lucide-react";
+import Link from "next/link";
+import { Disc3, Loader2, ArrowLeftRight, ListMusic } from "lucide-react";
 import { TrackSearch, TrackResult } from "@/components/track-search";
 import { CompatibilityCard, TrackFeatures, type AudioAnalysisSource } from "@/components/compatibility-card";
+import { addTrackToSetlist, buildSetlistTrack } from "@/lib/setlist";
 
 const SOURCE_LABELS: Record<NonNullable<AudioAnalysisSource>, string> = {
   reccobeats: "ReccoBeats",
@@ -43,6 +45,7 @@ export default function Home() {
   const [trackA, setTrackA] = useState<TrackResult | null>(null);
   const [trackB, setTrackB] = useState<TrackResult | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisState>(emptyAnalysis);
+  const [setlistMessage, setSetlistMessage] = useState<string | null>(null);
 
   const analyze = useCallback(async (a: TrackResult, b: TrackResult) => {
     setAnalysis((prev) => ({ ...prev, loading: true, error: null }));
@@ -109,6 +112,19 @@ export default function Home() {
     }
   }
 
+  function handleAddToSet(slot: "A" | "B") {
+    const track = slot === "A" ? trackA : trackB;
+    const features = slot === "A" ? analysis.featuresA : analysis.featuresB;
+    if (!track || !features) return;
+
+    const { added } = addTrackToSetlist(buildSetlistTrack(track, features));
+    setSetlistMessage(
+      added
+        ? `Added "${track.name}" to set — view in Set Planner`
+        : `"${track.name}" is already in your set`
+    );
+  }
+
   const hasResults =
     !analysis.loading &&
     !analysis.error &&
@@ -153,6 +169,15 @@ export default function Home() {
 
         {/* Header */}
         <header className="text-center flex flex-col items-center gap-4">
+          <div className="w-full flex justify-end">
+            <Link
+              href="/setlist"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase text-muted-foreground hover:text-[#a855f7] transition-colors"
+            >
+              <ListMusic className="size-3.5" />
+              Set Planner
+            </Link>
+          </div>
           <div
             className="flex items-center justify-center size-14 rounded-2xl border"
             style={{
@@ -303,7 +328,12 @@ export default function Home() {
             <CompatibilityCard
               featuresA={analysis.featuresA!}
               featuresB={analysis.featuresB!}
+              onAddToSetA={() => handleAddToSet("A")}
+              onAddToSetB={() => handleAddToSet("B")}
             />
+            {setlistMessage && (
+              <p className="text-xs text-center text-emerald-400">{setlistMessage}</p>
+            )}
           </section>
         )}
 

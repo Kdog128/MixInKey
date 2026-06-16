@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@hello-pangea/dnd": "^18.0.1",
     "@supabase/supabase-js": "^2.108.2",
     "@vercel/analytics": "1.6.1",
     "class-variance-authority": "^0.7.1",
