@@ -134,3 +134,112 @@
     @apply font-sans bg-background;
   }
 }
+
+.energy-arc-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) rgba(255, 255, 255, 0.06);
+}
+
+.energy-arc-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.energy-arc-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 9999px;
+}
+
+.energy-arc-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+.energy-arc-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+@keyframes save-success-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-0.5rem) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes save-success-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 8px rgba(52, 211, 153, 0.2),
+      0 0 16px rgba(52, 211, 153, 0.08),
+      0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 12px rgba(52, 211, 153, 0.3),
+      0 0 24px rgba(52, 211, 153, 0.12),
+      0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+}
+
+@keyframes save-success-check-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.save-success-toast {
+  animation:
+    save-success-enter 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+    save-success-glow 2s ease-in-out 0.45s infinite;
+}
+
+.save-success-check {
+  animation: save-success-check-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
+}
+
+.save-success-toast-fade-out {
+  animation: none !important;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-0.5rem);
+  transition:
+    opacity 0.5s ease,
+    transform 0.5s ease;
+}
+
+@keyframes gradient-text-flow {
+  0% {
+    background-position: 200% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.empty-state-gradient-text {
+  background-image: linear-gradient(
+    90deg,
+    #c084fc 0%,
+    #60a5fa 25%,
+    #a78bfa 50%,
+    #60a5fa 75%,
+    #c084fc 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-text-flow 5s linear infinite;
+}

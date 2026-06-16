@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSpotifyToken } from "@/lib/spotify-auth";
-import { mapSpotifyTrack, type SpotifyApiTrack } from "@/lib/spotify-track";
 import { createSupabaseServerClient } from "@/lib/supabase";
-import { getCachedTracksAnalysis, type TracksCacheRow } from "@/lib/tracks-cache";
+import { getCachedTracksAnalysis } from "@/lib/tracks-cache";
+import { resolveTrackMetadataByIds } from "@/lib/track-metadata";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -13,64 +12,9 @@ interface SetlistTrackRow {
   position: number;
 }
 
-async function fetchSpotifyTracksByIds(
-  ids: string[]
-): Promise<Map<string, ReturnType<typeof mapSpotifyTrack>>> {
-  const result = new Map<string, ReturnType<typeof mapSpotifyTrack>>();
-  if (ids.length === 0) return result;
-
-  try {
-    const token = await getSpotifyToken();
-    const headers = { Authorization: `Bearer ${token}` };
-
-    for (let i = 0; i < ids.length; i += 50) {
-      const batch = ids.slice(i, i + 50);
-      const url = `https://api.spotify.com/v1/tracks?ids=${batch.map(encodeURIComponent).join(",")}`;
-      const res = await fetch(url, { headers, cache: "no-store" });
-
-      if (!res.ok) {
-        console.warn("[setlists/id] Spotify tracks fetch failed:", res.status);
-        continue;
-      }
-
-      const data = (await res.json()) as { tracks: Array<SpotifyApiTrack | null> };
-      for (const track of data.tracks ?? []) {
-        if (track?.id) {
-          result.set(track.id, mapSpotifyTrack(track));
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("[setlists/id] Spotify tracks fetch error:", err);
-  }
-
-  return result;
-}
-
-async function fetchCacheRowsByIds(
-  ids: string[]
-): Promise<Map<string, TracksCacheRow>> {
-  const result = new Map<string, TracksCacheRow>();
-  if (ids.length === 0) return result;
-
-  const supabase = createSupabaseServerClient();
-  if (!supabase) return result;
-
-  const { data, error } = await supabase
-    .from("tracks_cache")
-    .select("spotify_id, artist, title, bpm, musical_key, camelot_label, artwork_url")
-    .in("spotify_id", ids);
-
-  if (error) {
-    console.warn("[setlists/id] Cache metadata fetch failed:", error.message);
-    return result;
-  }
-
-  for (const row of (data ?? []) as TracksCacheRow[]) {
-    result.set(row.spotify_id, row);
-  }
-
-  return result;
+interface UpdateSetlistBody {
+  name?: string;
+  tracks?: SetlistTrackRow[];
 }
 
 export async function GET(_request: NextRequest, context: RouteContext) {
@@ -113,28 +57,27 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const rows = (trackRows ?? []) as SetlistTrackRow[];
     const spotifyIds = rows.map((row) => row.spotify_id);
 
-    const [cacheAnalysisById, cacheRowsById, spotifyById] = await Promise.all([
+    const [cacheAnalysisById, metadataById] = await Promise.all([
       getCachedTracksAnalysis(spotifyIds),
-      fetchCacheRowsByIds(spotifyIds),
-      fetchSpotifyTracksByIds(spotifyIds),
+      resolveTrackMetadataByIds(spotifyIds),
     ]);
 
     const tracks = rows.map((row) => {
       const cached = cacheAnalysisById.get(row.spotify_id);
-      const cacheRow = cacheRowsById.get(row.spotify_id);
-      const spotify = spotifyById.get(row.spotify_id);
+      const metadata = metadataById.get(row.spotify_id);
 
       return {
         spotify_id: row.spotify_id,
         position: row.position,
-        name: spotify?.name ?? cacheRow?.title ?? "Unknown Track",
-        artist: spotify?.artist ?? cacheRow?.artist ?? "Unknown Artist",
-        album: spotify?.album ?? "",
-        image: spotify?.image ?? cacheRow?.artwork_url ?? null,
-        bpm: cached?.bpm ?? cacheRow?.bpm ?? null,
-        musical_key: cached?.musicalKey ?? cacheRow?.musical_key ?? null,
-        camelot_label: cached?.camelot?.label ?? cacheRow?.camelot_label ?? null,
-        duration_ms: spotify?.duration_ms ?? 0,
+        name: metadata?.name ?? "Unknown Track",
+        artist: metadata?.artist ?? "Unknown Artist",
+        album: metadata?.album ?? "",
+        image: metadata?.image ?? null,
+        bpm: cached?.bpm ?? null,
+        original_bpm: cached?.bpm ?? null,
+        musical_key: cached?.musicalKey ?? null,
+        camelot_label: cached?.camelot?.label ?? null,
+        duration_ms: metadata?.duration_ms ?? 0,
       };
     });
 
@@ -150,11 +93,24 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
-    if (!id?.trim()) {
+    const setlistId = id?.trim();
+
+    if (!setlistId) {
       return NextResponse.json({ error: "Setlist ID is required" }, { status: 400 });
+    }
+
+    const body = (await request.json()) as UpdateSetlistBody;
+    const name = body.name?.trim();
+    const tracks = body.tracks ?? [];
+
+    if (!name) {
+      return NextResponse.json({ error: "Setlist name is required" }, { status: 400 });
+    }
+    if (tracks.length === 0) {
+      return NextResponse.json({ error: "At least one track is required" }, { status: 400 });
     }
 
     const supabase = createSupabaseServerClient();
@@ -162,16 +118,142 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
     }
 
-    const { error } = await supabase.from("setlists").delete().eq("id", id);
+    const { data: existing, error: fetchError } = await supabase
+      .from("setlists")
+      .select("id")
+      .eq("id", setlistId)
+      .maybeSingle();
 
-    if (error) {
-      console.error("[setlists/id] Delete failed:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (fetchError) {
+      console.error("[setlists/id] PUT fetch failed:", fetchError);
+      return NextResponse.json({ error: fetchError.message }, { status: 500 });
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true });
+    const { error: updateError } = await supabase
+      .from("setlists")
+      .update({ name })
+      .eq("id", setlistId);
+
+    if (updateError) {
+      console.error("[setlists/id] PUT name update failed:", updateError);
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    const { error: tracksDeleteError } = await supabase
+      .from("setlist_tracks")
+      .delete()
+      .eq("setlist_id", setlistId);
+
+    if (tracksDeleteError) {
+      console.error("[setlists/id] PUT tracks delete failed:", tracksDeleteError);
+      return NextResponse.json({ error: tracksDeleteError.message }, { status: 500 });
+    }
+
+    const rows = tracks.map((track) => ({
+      setlist_id: setlistId,
+      spotify_id: track.spotify_id,
+      position: track.position,
+    }));
+
+    const { error: tracksInsertError } = await supabase.from("setlist_tracks").insert(rows);
+
+    if (tracksInsertError) {
+      console.error("[setlists/id] PUT tracks insert failed:", tracksInsertError);
+      return NextResponse.json({ error: tracksInsertError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ id: setlistId, name, trackCount: tracks.length, updated: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request: NextRequest, context: RouteContext) {
+  try {
+    const { id } = await context.params;
+    const setlistId = id?.trim();
+
+    console.log("[setlists/id] DELETE request received for setlist ID:", setlistId);
+
+    if (!setlistId) {
+      return NextResponse.json({ error: "Setlist ID is required" }, { status: 400 });
+    }
+
+    const supabase = createSupabaseServerClient();
+    if (!supabase) {
+      console.error("[setlists/id] DELETE failed: Supabase server client not configured");
+      return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+    }
+
+    const { data: existing, error: fetchError } = await supabase
+      .from("setlists")
+      .select("id, name")
+      .eq("id", setlistId)
+      .maybeSingle();
+
+    console.log("[setlists/id] DELETE pre-check:", { setlistId, existing, fetchError });
+
+    if (fetchError) {
+      console.error("[setlists/id] DELETE fetch failed:", fetchError);
+      return NextResponse.json({ error: fetchError.message }, { status: 500 });
+    }
+    if (!existing) {
+      console.warn("[setlists/id] DELETE setlist not found:", setlistId);
+      return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
+    }
+
+    const { data: deletedTracks, error: tracksDeleteError } = await supabase
+      .from("setlist_tracks")
+      .delete()
+      .eq("setlist_id", setlistId)
+      .select("id");
+
+    console.log("[setlists/id] DELETE setlist_tracks result:", {
+      setlistId,
+      deletedTrackCount: deletedTracks?.length ?? 0,
+      tracksDeleteError,
+    });
+
+    if (tracksDeleteError) {
+      console.error("[setlists/id] DELETE setlist_tracks failed:", tracksDeleteError);
+      return NextResponse.json({ error: tracksDeleteError.message }, { status: 500 });
+    }
+
+    const { data: deletedSetlist, error: setlistDeleteError } = await supabase
+      .from("setlists")
+      .delete()
+      .eq("id", setlistId)
+      .select("id, name");
+
+    console.log("[setlists/id] DELETE setlists result:", {
+      setlistId,
+      deletedSetlist,
+      setlistDeleteError,
+    });
+
+    if (setlistDeleteError) {
+      console.error("[setlists/id] DELETE setlists failed:", setlistDeleteError);
+      return NextResponse.json({ error: setlistDeleteError.message }, { status: 500 });
+    }
+
+    if (!deletedSetlist?.length) {
+      console.warn("[setlists/id] DELETE completed but no setlist row removed:", setlistId);
+      return NextResponse.json({ error: "Setlist could not be deleted" }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      id: deletedSetlist[0].id,
+      name: deletedSetlist[0].name,
+      deletedTrackCount: deletedTracks?.length ?? 0,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Internal error";
+    console.error("[setlists/id] DELETE unexpected error:", err);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

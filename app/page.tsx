@@ -1,32 +1,84 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import Link from "next/link";
-import { Disc3, Loader2, ArrowLeftRight, ListMusic } from "lucide-react";
+import { Disc3, Loader2, ArrowLeftRight } from "lucide-react";
 import { TrackSearch, TrackResult } from "@/components/track-search";
-import { CompatibilityCard, TrackFeatures, type AudioAnalysisSource } from "@/components/compatibility-card";
+import { CompatibilityCard, TrackFeatures } from "@/components/compatibility-card";
+import { AppShell } from "@/components/app-shell";
+import { ArtworkMosaicWall } from "@/components/artwork-mosaic-wall";
 import { addTrackToSetlist, buildSetlistTrack } from "@/lib/setlist";
+import { cn } from "@/lib/utils";
 
-const SOURCE_LABELS: Record<NonNullable<AudioAnalysisSource>, string> = {
-  reccobeats: "ReccoBeats",
-  getsongbpm: "GetSongBPM",
-  soundnet: "SoundNet",
-  musicbrainz: "MusicBrainz",
-};
-
-function formatBpmKeySourceLabel(
-  featuresA: TrackFeatures | null,
-  featuresB: TrackFeatures | null
-): string {
-  const sources = [featuresA?.source, featuresB?.source].filter(
-    (s): s is NonNullable<AudioAnalysisSource> => s != null
+function SourceBadge({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none",
+        className
+      )}
+    >
+      {children}
+    </span>
   );
-  const unique = [...new Set(sources)];
-
-  if (unique.length === 0) return "BPM & Key unavailable";
-  if (unique.length === 1) return `BPM & Key via ${SOURCE_LABELS[unique[0]]}`;
-  return `BPM & Key via ${unique.map((s) => SOURCE_LABELS[s]).join(" & ")}`;
 }
+
+function FooterCategory({ label }: { label: string }) {
+  return (
+    <span className="text-[10px] font-medium uppercase tracking-widest text-white/40">
+      {label}
+    </span>
+  );
+}
+
+function SourceBadgesFooter({ className }: { className?: string }) {
+  return (
+    <footer className={cn("flex w-full justify-center", className)}>
+      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-3 max-w-3xl">
+        <div className="flex items-center gap-2">
+          <FooterCategory label="Tracks" />
+          <SourceBadge className="border-emerald-500/35 bg-emerald-500/10 text-emerald-400">
+            Spotify
+          </SourceBadge>
+        </div>
+
+        <span aria-hidden="true" className="text-white/20">
+          |
+        </span>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <FooterCategory label="BPM & Key" />
+          <SourceBadge className="border-[#a855f7]/35 bg-[#a855f7]/10 text-[#c084fc]">
+            ReccoBeats
+          </SourceBadge>
+          <SourceBadge className="border-blue-500/35 bg-blue-500/10 text-blue-400">
+            SoundNet
+          </SourceBadge>
+          <SourceBadge className="border-amber-500/35 bg-amber-500/10 text-amber-400">
+            GetSongBPM
+          </SourceBadge>
+        </div>
+
+        <span aria-hidden="true" className="text-white/20">
+          |
+        </span>
+
+        <div className="flex items-center gap-2">
+          <FooterCategory label="Genres" />
+          <SourceBadge className="border-red-500/35 bg-red-500/10 text-red-400">
+            Last.fm
+          </SourceBadge>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 interface AnalysisState {
   loading: boolean;
   featuresA: TrackFeatures | null;
@@ -133,7 +185,11 @@ export default function Home() {
     trackA &&
     trackB;
 
+  const isEmptyState =
+    !trackA && !trackB && !hasResults && !analysis.loading && !analysis.error;
+
   return (
+    <AppShell>
     <main className="min-h-screen bg-background font-sans">
       {/* Subtle grid overlay */}
       <div
@@ -165,36 +221,33 @@ export default function Home() {
         aria-hidden="true"
       />
 
-      <div className="relative z-10 max-w-3xl mx-auto px-4 py-12 flex flex-col gap-8">
+      {isEmptyState && <ArtworkMosaicWall active />}
 
+      <div
+        className={cn(
+          "relative z-10 mx-auto flex w-full max-w-3xl flex-col px-4 pb-8",
+          isEmptyState ? "min-h-screen justify-center" : "pt-12"
+        )}
+      >
+        <div className="relative z-10 flex w-full flex-col gap-8">
+
+        <div className="flex flex-col">
         {/* Header */}
-        <header className="text-center flex flex-col items-center gap-4">
-          <div className="w-full flex justify-end">
-            <Link
-              href="/setlist"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase text-muted-foreground hover:text-[#a855f7] transition-colors"
+        <header className="mb-3 w-full text-left">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className="flex size-11 flex-shrink-0 items-center justify-center rounded-xl border"
+              style={{
+                borderColor: "rgba(168,85,247,0.3)",
+                background: "rgba(168,85,247,0.1)",
+                boxShadow: "0 0 24px rgba(168,85,247,0.2)",
+              }}
             >
-              <ListMusic className="size-3.5" />
-              Set Planner
-            </Link>
-          </div>
-          <div
-            className="flex items-center justify-center size-14 rounded-2xl border"
-            style={{
-              borderColor: "rgba(168,85,247,0.3)",
-              background: "rgba(168,85,247,0.1)",
-              boxShadow: "0 0 24px rgba(168,85,247,0.2)",
-            }}
-          >
-            <Disc3 className="size-7" style={{ color: "#a855f7" }} />
-          </div>
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-balance text-foreground">
-              DJ Mix Compatibility
+              <Disc3 className="size-5" style={{ color: "#a855f7" }} />
+            </div>
+            <h1 className="truncate text-xl font-bold tracking-tight text-foreground md:text-2xl">
+              Compatibility
             </h1>
-            <p className="mt-2 text-muted-foreground text-pretty max-w-md mx-auto text-sm leading-relaxed">
-              Search two Spotify tracks to instantly analyze BPM, musical key, energy and compatibility — with a live Camelot wheel.
-            </p>
           </div>
         </header>
 
@@ -256,8 +309,8 @@ export default function Home() {
           </div>
 
           {!trackA && !trackB && (
-            <p className="text-xs text-center text-muted-foreground/50">
-              Search for a Spotify track in each slot to begin compatibility analysis
+            <p className="empty-state-gradient-text text-center text-xs">
+              Search two Spotify tracks to analyze BPM, key, and Camelot compatibility.
             </p>
           )}
           {(trackA || trackB) && !(trackA && trackB) && (
@@ -268,6 +321,9 @@ export default function Home() {
             </p>
           )}
         </section>
+        </div>
+
+        {isEmptyState && <SourceBadgesFooter />}
 
         {/* Loading */}
         {analysis.loading && (
@@ -337,32 +393,11 @@ export default function Home() {
           </section>
         )}
 
-        <footer className="text-center space-y-1 pb-2">
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
-            Track data powered by Spotify &mdash;{" "}
-            {formatBpmKeySourceLabel(analysis.featuresA, analysis.featuresB)}
-          </p>
-          <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.15)" }}>
-            <a
-              href="/api/auth/spotify"
-              className="underline decoration-white/10 underline-offset-2 transition-colors hover:decoration-white/25"
-              style={{ color: "rgba(255,255,255,0.25)" }}
-            >
-              Connect Spotify
-            </a>
-            {" "}for recently played suggestions &middot; BPM data powered by{" "}
-            <a
-              href="https://getsongbpm.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline decoration-white/10 underline-offset-2 transition-colors hover:decoration-white/25"
-              style={{ color: "rgba(255,255,255,0.25)" }}
-            >
-              GetSongBPM
-            </a>
-          </p>
-        </footer>
+        {!isEmptyState && <SourceBadgesFooter className="pt-6" />}
+
+        </div>
       </div>
     </main>
+    </AppShell>
   );
 }

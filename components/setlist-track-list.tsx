@@ -18,6 +18,32 @@ import {
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
 import { cn } from "@/lib/utils";
 
+const SETLIST_TRACK_GRID_CLASS =
+  "sm:grid sm:grid-cols-[1rem_3rem_1.5rem_minmax(0,1fr)_2.5rem_2.75rem_7.5rem_2rem_2rem] sm:items-center sm:gap-x-2 sm:px-3";
+
+export function SetlistTrackListHeader() {
+  return (
+    <div
+      className={cn(
+        "hidden text-[11px] font-semibold uppercase tracking-widest text-muted-foreground border-b border-border/50 pb-3",
+        SETLIST_TRACK_GRID_CLASS
+      )}
+    >
+      <span aria-hidden="true" />
+      <span aria-hidden="true" />
+      <span className="text-center">#</span>
+      <span>Track</span>
+      <span className="text-right tabular-nums">BPM</span>
+      <span className="text-center">Key</span>
+      <div className="flex justify-end min-w-0">
+        <span>Mix</span>
+      </div>
+      <span aria-hidden="true" />
+      <span aria-hidden="true" />
+    </div>
+  );
+}
+
 interface SetlistTrackListProps {
   tracks: SetlistTrack[];
   onReorder: (fromIndex: number, toIndex: number) => void;
@@ -42,7 +68,7 @@ function CamelotLabelBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center min-w-[2.25rem] px-1.5 py-0.5 rounded-full border text-[10px] font-bold font-mono",
+        "inline-flex items-center justify-center min-w-[2.25rem] px-1.5 py-0.5 rounded-full border text-[11px] font-bold font-mono",
         !style && "border-border bg-white/5 text-foreground"
       )}
       style={
@@ -67,7 +93,7 @@ function TransitionBadge({ transition }: { transition: TransitionAnalysis }) {
   return (
     <span className="relative group inline-flex">
       <span
-        className="inline-flex items-center justify-center max-w-[5.5rem] sm:max-w-[7.5rem] px-2 py-0.5 rounded-full border text-[10px] font-semibold truncate cursor-default"
+        className="inline-flex items-center justify-center max-w-[7.5rem] px-2.5 py-1 rounded-full border text-[11px] font-semibold truncate cursor-default"
         style={{
           color: style.color,
           backgroundColor: style.bg,
@@ -111,6 +137,7 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
       spotify_id: track.spotify_id,
       bpm: track.bpm,
       key: track.musical_key,
+      image: track.image ?? null,
     });
     setFavoriteIds((prev) => {
       const next = new Set(prev);
@@ -130,12 +157,14 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <Droppable droppableId="setlist">
+      <div className="flex flex-col gap-2.5">
+        <SetlistTrackListHeader />
+        <Droppable droppableId="setlist">
         {(provided) => (
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
-            className="flex flex-col gap-2"
+            className="flex flex-col gap-2.5"
           >
             {tracks.map((track, index) => {
               const nextTrack = tracks[index + 1];
@@ -151,7 +180,9 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
                       ref={dragProvided.innerRef}
                       {...dragProvided.draggableProps}
                       className={cn(
-                        "flex items-center gap-2 sm:gap-3 rounded-xl border border-border bg-surface-raised px-2 sm:px-3 py-3 min-w-0",
+                        "rounded-xl border border-border bg-surface-raised px-3 py-4 min-w-0",
+                        "flex items-center gap-2 sm:gap-0",
+                        SETLIST_TRACK_GRID_CLASS,
                         snapshot.isDragging && "shadow-lg ring-1 ring-white/10"
                       )}
                     >
@@ -168,33 +199,33 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
                         <img
                           src={track.image}
                           alt=""
-                          className="size-10 rounded-md object-cover flex-shrink-0 ring-1 ring-white/10"
+                          className="size-12 rounded-md object-cover flex-shrink-0 ring-1 ring-white/10"
                         />
                       ) : (
-                        <div className="size-10 rounded-md bg-muted flex items-center justify-center flex-shrink-0 ring-1 ring-white/10">
-                          <Music className="size-4 text-muted-foreground" />
+                        <div className="size-12 rounded-md bg-muted flex items-center justify-center flex-shrink-0 ring-1 ring-white/10">
+                          <Music className="size-5 text-muted-foreground" />
                         </div>
                       )}
 
-                      <span className="flex-shrink-0 w-5 sm:w-6 text-xs font-mono text-muted-foreground text-center">
+                      <span className="flex-shrink-0 w-5 sm:w-6 text-sm font-mono text-muted-foreground text-center">
                         {track.position}
                       </span>
 
-                      <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="min-w-0 overflow-hidden sm:col-auto flex-1 sm:flex-none">
                         <p
-                          className="text-sm font-semibold truncate text-foreground"
+                          className="text-base font-semibold truncate text-foreground"
                           title={track.name}
                         >
                           {track.name}
                         </p>
                         <p
-                          className="text-xs text-muted-foreground truncate"
+                          className="text-sm text-muted-foreground truncate"
                           title={track.artist}
                         >
                           {track.artist}
                         </p>
                         <div className="flex flex-wrap items-center gap-2 mt-1 sm:hidden">
-                          <span className="text-[10px] font-mono text-muted-foreground">
+                          <span className="text-xs font-mono text-muted-foreground">
                             {track.bpm != null ? `${track.bpm} BPM` : "— BPM"}
                           </span>
                           {camelotLabel && (
@@ -203,22 +234,23 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
                         </div>
                       </div>
 
-                      <div className="hidden sm:flex flex-shrink-0 items-center gap-3">
-                        <span className="w-10 text-right text-xs font-mono text-muted-foreground">
-                          {track.bpm != null ? track.bpm : "—"}
-                        </span>
+                      <span className="hidden sm:block text-right text-sm font-mono text-muted-foreground tabular-nums">
+                        {track.bpm != null ? track.bpm : "—"}
+                      </span>
+
+                      <div className="hidden sm:flex justify-center">
                         {camelotLabel ? (
                           <CamelotLabelBadge label={camelotLabel} transition={outgoingTransition} />
                         ) : (
-                          <span className="w-10 text-center text-xs text-muted-foreground">—</span>
+                          <span className="text-sm text-muted-foreground">—</span>
                         )}
                       </div>
 
-                      {outgoingTransition && (
-                        <div className="flex-shrink-0">
+                      <div className="hidden sm:flex justify-end min-w-0">
+                        {outgoingTransition ? (
                           <TransitionBadge transition={outgoingTransition} />
-                        </div>
-                      )}
+                        ) : null}
+                      </div>
 
                       <button
                         type="button"
@@ -260,7 +292,8 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
             {provided.placeholder}
           </div>
         )}
-      </Droppable>
+        </Droppable>
+      </div>
     </DragDropContext>
   );
 }

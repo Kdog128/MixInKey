@@ -8,6 +8,7 @@ import {
   getCachedTrackAnalysis,
   getCachedTracksAnalysis,
   saveCachedTrackAnalysis,
+  upsertTrackCacheMetadata,
 } from "@/lib/tracks-cache";
 
 export interface AudioAnalysis {
@@ -33,6 +34,7 @@ export interface TrackAudioInput {
   title: string;
   duration_ms?: number;
   spotify_id?: string;
+  artwork_url?: string | null;
 }
 
 function hasAnalysisData(analysis: {
@@ -164,7 +166,12 @@ async function fetchTrackAudioAnalysisUncached(
 export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<AudioAnalysis> {
   if (track.spotify_id) {
     const cached = await getCachedTrackAnalysis(track.spotify_id);
-    if (cached) return cached;
+    if (cached) {
+      if (track.artwork_url?.trim()) {
+        void upsertTrackCacheMetadata(track);
+      }
+      return cached;
+    }
   }
 
   const result = await fetchTrackAudioAnalysisUncached(track);
@@ -189,6 +196,9 @@ export async function fetchTracksAudioAnalysis(
       const cached = cacheMap.get(track.spotify_id);
       if (cached) {
         results[i] = cached;
+        if (track.artwork_url?.trim()) {
+          void upsertTrackCacheMetadata(track);
+        }
         continue;
       }
     }

@@ -19,6 +19,7 @@ interface ClientTrackInput {
   id: string;
   name?: string;
   artist?: string;
+  image?: string | null;
   preview_url?: string | null;
   artist_id?: string | null;
   popularity?: number;
@@ -144,6 +145,7 @@ async function resolveTrackFeatures(
         title: t.name ?? "",
         duration_ms: t.duration_ms,
         spotify_id: t.id,
+        artwork_url: t.image ?? null,
       }))
     ),
   ]);

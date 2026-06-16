@@ -167,30 +167,50 @@ export interface KeyCompatStyle {
   border: string;
 }
 
-/** UI colors for key compatibility labels — aligned with the score ring system. */
+/** UI colors for key compatibility labels — one distinct hue per transition type. */
 export function getKeyCompatStyle(type: CompatibilityType): KeyCompatStyle {
   switch (type) {
     case "perfect":
-    case "relative":
-    case "compatible":
       return {
         color: "#22c55e",
-        bg: "rgba(34, 197, 94, 0.1)",
-        border: "rgba(34, 197, 94, 0.2)",
+        bg: "rgba(34, 197, 94, 0.12)",
+        border: "rgba(34, 197, 94, 0.28)",
       };
-    case "adjacent":
+    case "relative":
+      return {
+        color: "#10b981",
+        bg: "rgba(16, 185, 129, 0.12)",
+        border: "rgba(16, 185, 129, 0.28)",
+      };
+    case "compatible":
+      return {
+        color: "#84cc16",
+        bg: "rgba(132, 204, 22, 0.12)",
+        border: "rgba(132, 204, 22, 0.28)",
+      };
     case "energy_boost":
+      return {
+        color: "#f59e0b",
+        bg: "rgba(245, 158, 11, 0.12)",
+        border: "rgba(245, 158, 11, 0.28)",
+      };
     case "energy_drop":
       return {
-        color: "#eab308",
-        bg: "rgba(234, 179, 8, 0.1)",
-        border: "rgba(234, 179, 8, 0.2)",
+        color: "#0ea5e9",
+        bg: "rgba(14, 165, 233, 0.12)",
+        border: "rgba(14, 165, 233, 0.28)",
+      };
+    case "adjacent":
+      return {
+        color: "#f97316",
+        bg: "rgba(249, 115, 22, 0.12)",
+        border: "rgba(249, 115, 22, 0.28)",
       };
     case "incompatible":
       return {
         color: "#ef4444",
-        bg: "rgba(239, 68, 68, 0.1)",
-        border: "rgba(239, 68, 68, 0.2)",
+        bg: "rgba(239, 68, 68, 0.12)",
+        border: "rgba(239, 68, 68, 0.28)",
       };
   }
 }

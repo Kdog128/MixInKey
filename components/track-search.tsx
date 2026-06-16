@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Search, X, Music, Loader2, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isFavorite, toggleFavorite, getFavorites } from "@/lib/favorites";
+import { isFavorite, toggleFavorite, getFavorites, enrichFavoritesWithImages } from "@/lib/favorites";
 
 export interface TrackResult {
   id: string;
@@ -103,28 +103,43 @@ export function TrackSearch({
     }
   }, []);
 
-  const loadFavorites = useCallback(() => {
+  const loadFavorites = useCallback(async () => {
     setIsRecent(false);
     setIsFavorites(true);
     setQuery("");
-    const favorites = getFavorites();
-    const tracks: TrackResult[] = favorites.map((f) => ({
-      id: f.spotify_id,
-      name: f.name,
-      artist: f.artist,
-      artist_id: null,
-      album: "",
-      image: null,
-      preview_url: null,
-      duration_ms: 0,
-      popularity: 0,
-      explicit: false,
-      release_date: null,
-    }));
-    setResults(tracks);
-    setOpen(tracks.length > 0);
-    setFocusedIndex(-1);
+    setLoading(true);
+    try {
+      const favorites = await enrichFavoritesWithImages(getFavorites());
+      const tracks: TrackResult[] = favorites.map((f) => ({
+        id: f.spotify_id,
+        name: f.name,
+        artist: f.artist,
+        artist_id: null,
+        album: "",
+        image: f.image ?? null,
+        preview_url: null,
+        duration_ms: 0,
+        popularity: 0,
+        explicit: false,
+        release_date: null,
+      }));
+      setResults(tracks);
+      setOpen(true);
+      setFocusedIndex(-1);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  const handleToggleFavorites = useCallback(() => {
+    if (isFavorites) {
+      setIsFavorites(false);
+      setResults([]);
+      setOpen(false);
+      return;
+    }
+    loadFavorites();
+  }, [isFavorites, loadFavorites]);
 
   const handleFocus = useCallback(() => {
     if (isFavorites && results.length > 0) {
@@ -175,6 +190,7 @@ export function TrackSearch({
       spotify_id: selectedTrack.id,
       bpm: bpm ?? null,
       key: musicalKey ?? null,
+      image: selectedTrack.image ?? null,
     });
     setFavorited(nowFavorited);
   }
@@ -313,22 +329,7 @@ export function TrackSearch({
         </div>
       ) : (
         /* Search input + dropdown */
-        <div className="relative flex flex-col gap-2">
-          {enableFavoritesFilter && (
-            <button
-              type="button"
-              onClick={loadFavorites}
-              className={cn(
-                "self-start inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
-                isFavorites
-                  ? "border-rose-400/40 bg-rose-400/10 text-rose-400"
-                  : "border-border bg-surface-raised text-muted-foreground hover:text-rose-400 hover:border-rose-400/30"
-              )}
-            >
-              <Heart className={cn("size-3.5", isFavorites && "fill-current")} />
-              Favorites
-            </button>
-          )}
+        <div className="relative">
           <div
             className={cn(
               "flex items-center rounded-xl border bg-surface ring-2 ring-transparent transition-all",
@@ -352,13 +353,17 @@ export function TrackSearch({
               onKeyDown={handleKeyDown}
               onFocus={handleFocus}
               placeholder={`Search for a track...`}
-              className="flex-1 bg-transparent px-3 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none"
+              className={cn(
+                "flex-1 bg-transparent px-3 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0",
+                enableFavoritesFilter ? "pr-1" : query ? "pr-1" : ""
+              )}
               aria-label={`Search for ${label}`}
               aria-autocomplete="list"
               aria-expanded={open}
             />
             {query && (
               <button
+                type="button"
                 onClick={() => {
                   setQuery("");
                   setResults([]);
@@ -366,10 +371,26 @@ export function TrackSearch({
                   setIsRecent(false);
                   setIsFavorites(false);
                 }}
-                className="mr-2 size-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                className="mr-1 size-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
                 aria-label="Clear search"
               >
                 <X className="size-3.5" />
+              </button>
+            )}
+            {enableFavoritesFilter && (
+              <button
+                type="button"
+                onClick={handleToggleFavorites}
+                aria-label={isFavorites ? "Exit favorites filter" : "Show favorites"}
+                aria-pressed={isFavorites}
+                className={cn(
+                  "mr-2 size-6 rounded-full flex items-center justify-center transition-colors flex-shrink-0",
+                  isFavorites
+                    ? "text-rose-400 hover:text-rose-300"
+                    : "text-muted-foreground hover:text-rose-400"
+                )}
+              >
+                <Heart className={cn("size-3.5", isFavorites && "fill-current")} />
               </button>
             )}
           </div>

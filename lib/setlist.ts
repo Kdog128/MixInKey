@@ -9,6 +9,7 @@ export interface SetlistTrack {
   album: string;
   image: string | null;
   bpm: number | null;
+  original_bpm: number | null;
   musical_key: string | null;
   camelot_label: string | null;
   duration_ms: number;
@@ -16,13 +17,25 @@ export interface SetlistTrack {
 
 const STORAGE_KEY = "dj-companion-setlist";
 
+export function normalizeSetlistTrack(track: SetlistTrack): SetlistTrack {
+  const bpm = track.bpm ?? null;
+  const image = track.image?.trim() || null;
+  return {
+    ...track,
+    image,
+    original_bpm: track.original_bpm ?? bpm,
+  };
+}
+
 function readTracks(): SetlistTrack[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SetlistTrack[]) : [];
+    return Array.isArray(parsed)
+      ? (parsed as SetlistTrack[]).map(normalizeSetlistTrack)
+      : [];
   } catch {
     return [];
   }
@@ -59,6 +72,7 @@ export function buildSetlistTrack(
     album: track.album,
     image: track.image,
     bpm: features?.bpm ?? null,
+    original_bpm: features?.bpm ?? null,
     musical_key: features?.musical_key ?? null,
     camelot_label: features?.camelot?.label ?? null,
     duration_ms: track.duration_ms,
