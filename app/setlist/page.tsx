@@ -438,7 +438,7 @@ export default function SetlistPage() {
 
   return (
     <AppShell>
-    <main className="min-h-screen bg-background font-sans">
+    <main className="min-h-screen font-sans">
       <div
         className="fixed inset-0 pointer-events-none"
         style={{

@@ -32,7 +32,7 @@ function PageBackground() {
 export default function RecommendationsPage() {
   return (
     <AppShell>
-      <main className="min-h-screen bg-background font-sans">
+      <main className="min-h-screen font-sans">
         <PageBackground />
 
         <div className="relative z-10 mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-8 px-4 py-12">

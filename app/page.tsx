@@ -5,7 +5,6 @@ import { Disc3, Loader2, ArrowLeftRight } from "lucide-react";
 import { TrackSearch, TrackResult } from "@/components/track-search";
 import { CompatibilityCard, TrackFeatures } from "@/components/compatibility-card";
 import { AppShell } from "@/components/app-shell";
-import { ArtworkMosaicWall } from "@/components/artwork-mosaic-wall";
 import { addTrackToSetlist, buildSetlistTrack } from "@/lib/setlist";
 import { cn } from "@/lib/utils";
 
@@ -190,7 +189,7 @@ export default function Home() {
 
   return (
     <AppShell>
-    <main className="min-h-screen bg-background font-sans">
+    <main className="min-h-screen font-sans">
       {/* Subtle grid overlay */}
       <div
         className="fixed inset-0 pointer-events-none"
@@ -221,8 +220,6 @@ export default function Home() {
         aria-hidden="true"
       />
 
-      {isEmptyState && <ArtworkMosaicWall active />}
-
       <div
         className={cn(
           "relative z-10 mx-auto flex w-full max-w-3xl flex-col px-4 pb-8",
@@ -234,16 +231,16 @@ export default function Home() {
         <div className="flex flex-col">
         {/* Header */}
         <header className="mb-3 w-full text-left">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className="flex size-11 flex-shrink-0 items-center justify-center rounded-xl border"
-              style={{
-                borderColor: "rgba(168,85,247,0.3)",
-                background: "rgba(168,85,247,0.1)",
-                boxShadow: "0 0 24px rgba(168,85,247,0.2)",
-              }}
-            >
-              <Disc3 className="size-5" style={{ color: "#a855f7" }} />
+          <div
+            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-2xl border px-4 py-2.5"
+            style={{
+              borderColor: "rgba(168,85,247,0.3)",
+              background: "rgba(168,85,247,0.1)",
+              boxShadow: "0 0 24px rgba(168,85,247,0.2)",
+            }}
+          >
+            <div className="flex size-10 flex-shrink-0 items-center justify-center">
+              <Disc3 className="size-7" style={{ color: "#a855f7" }} />
             </div>
             <h1 className="truncate text-xl font-bold tracking-tight text-foreground md:text-2xl">
               Compatibility
@@ -298,7 +295,7 @@ export default function Home() {
             <div className="min-w-0">
               <TrackSearch
                 label="Track 2"
-                accentColor="blue"
+                accentColor="purple"
                 selectedTrack={trackB}
                 onSelect={handleSelectB}
                 onClear={handleClearB}

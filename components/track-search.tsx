@@ -30,6 +30,17 @@ interface TrackSearchProps {
   enableFavoritesFilter?: boolean;
 }
 
+const TRACK_SLOT_HEIGHT_CLASS = "h-[4.75rem]";
+const SELECTED_TRACK_CARD_CLASS = cn(
+  "relative flex items-center gap-3 rounded-xl border p-3 min-w-0 w-full overflow-hidden",
+  TRACK_SLOT_HEIGHT_CLASS,
+  "border-[#a855f7]/35 shadow-[0_0_20px_rgba(168,85,247,0.12)]"
+);
+const SEARCH_FIELD_CLASS = cn(
+  "flex items-center rounded-xl border bg-surface ring-2 ring-transparent transition-all border-border",
+  TRACK_SLOT_HEIGHT_CLASS
+);
+
 export function TrackSearch({
   label,
   accentColor,
@@ -235,11 +246,11 @@ export function TrackSearch({
       hover: "hover:bg-[#a855f7]/10",
     },
     blue: {
-      ring: "focus-within:ring-[#3b82f6]/40",
-      border: "focus-within:border-[#3b82f6]/60",
-      label: "text-[#60a5fa]",
-      badge: "bg-[#3b82f6]/20 text-[#93c5fd] border-[#3b82f6]/30",
-      hover: "hover:bg-[#3b82f6]/10",
+      ring: "focus-within:ring-[#a855f7]/40",
+      border: "focus-within:border-[#a855f7]/60",
+      label: "text-[#a855f7]",
+      badge: "bg-[#a855f7]/20 text-[#c084fc] border-[#a855f7]/30",
+      hover: "hover:bg-[#a855f7]/10",
     },
   }[accentColor];
 
@@ -257,7 +268,7 @@ export function TrackSearch({
 
       {selectedTrack ? (
         /* Selected state */
-        <div className="relative flex items-center gap-3 p-3 rounded-xl border border-border min-w-0 w-full overflow-hidden">
+        <div className={SELECTED_TRACK_CARD_CLASS}>
           {selectedTrack.image ? (
             <>
               <img
@@ -286,22 +297,22 @@ export function TrackSearch({
             )}
             <div className="flex-1 min-w-0 overflow-hidden">
               <p
-                className="font-semibold text-sm truncate text-foreground"
+                className="min-h-5 truncate text-sm font-semibold leading-5 text-foreground"
                 title={selectedTrack.name}
               >
                 {selectedTrack.name}
               </p>
               <p
-                className="text-xs text-muted-foreground truncate"
+                className="min-h-4 truncate text-xs leading-4 text-muted-foreground"
                 title={selectedTrack.artist}
               >
                 {selectedTrack.artist}
               </p>
               <p
-                className="text-xs text-muted-foreground/70 truncate"
-                title={selectedTrack.album}
+                className="min-h-4 truncate text-xs leading-4 text-muted-foreground/70"
+                title={selectedTrack.album || undefined}
               >
-                {selectedTrack.album}
+                {selectedTrack.album || "\u00A0"}
               </p>
             </div>
             <button
@@ -332,10 +343,9 @@ export function TrackSearch({
         <div className="relative">
           <div
             className={cn(
-              "flex items-center rounded-xl border bg-surface ring-2 ring-transparent transition-all",
+              SEARCH_FIELD_CLASS,
               accentStyles.ring,
-              accentStyles.border,
-              "border-border"
+              accentStyles.border
             )}
           >
             {loading ? (
@@ -354,7 +364,7 @@ export function TrackSearch({
               onFocus={handleFocus}
               placeholder={`Search for a track...`}
               className={cn(
-                "flex-1 bg-transparent px-3 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0",
+                "flex-1 bg-transparent px-3 py-0 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0",
                 enableFavoritesFilter ? "pr-1" : query ? "pr-1" : ""
               )}
               aria-label={`Search for ${label}`}
@@ -427,9 +437,7 @@ export function TrackSearch({
                     onClick={() => handleSelect(track)}
                     className={cn(
                       "w-full min-w-0 flex items-center gap-3 px-3 py-2.5 text-left transition-colors overflow-hidden",
-                      idx === focusedIndex ? (
-                        accentColor === "purple" ? "bg-[#a855f7]/15" : "bg-[#3b82f6]/15"
-                      ) : accentStyles.hover,
+                      idx === focusedIndex ? "bg-[#a855f7]/15" : accentStyles.hover,
                       idx < results.length - 1 && "border-b border-border/50"
                     )}
                   >

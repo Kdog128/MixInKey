@@ -8,6 +8,7 @@ import type { AudioAnalysis } from "@/lib/audio-analysis";
 console.log("[getsongbpm] process.env.GETSONGBPM_API_KEY:", process.env.GETSONGBPM_API_KEY);
 
 const API_BASE = "https://api.getsong.co";
+const GETSONGBPM_TIMEOUT_MS = 3000;
 
 const EMPTY: AudioAnalysis = {
   bpm: null,
@@ -201,49 +202,65 @@ async function searchGetSong(
     lookup,
   }).toString()}`;
 
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-
-  const bodyText = await res.text();
-  console.log("[getsongbpm] Raw API response:", {
-    status: res.status,
-    type,
-    lookup,
-    body: bodyText,
-  });
-  if (!res.ok) {
-    console.warn("[getsongbpm] Search failed:", { status: res.status, type, lookup });
-    return [];
-  }
-
   try {
-    return extractSearchResults(JSON.parse(bodyText));
-  } catch {
-    console.warn("[getsongbpm] Invalid JSON response");
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(GETSONGBPM_TIMEOUT_MS),
+    });
+
+    const bodyText = await res.text();
+    console.log("[getsongbpm] Raw API response:", {
+      status: res.status,
+      type,
+      lookup,
+      body: bodyText,
+    });
+    if (!res.ok) {
+      console.warn("[getsongbpm] Search failed:", { status: res.status, type, lookup });
+      return [];
+    }
+
+    try {
+      return extractSearchResults(JSON.parse(bodyText));
+    } catch {
+      console.warn("[getsongbpm] Invalid JSON response");
+      return [];
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      console.warn("[getsongbpm] Request timed out:", { type, lookup });
+      return [];
+    }
+    console.error("[getsongbpm] Request error:", err);
     return [];
   }
 }
 
-export async function fetchGetSongBpmAnalysis(track: GetSongBpmTrackInput): Promise<AudioAnalysis> {
+export interface GetSongBpmData {
+  analysis: AudioAnalysis;
+  genres: string[];
+}
+
+export async function fetchGetSongBpmData(track: GetSongBpmTrackInput): Promise<GetSongBpmData> {
   const match = await resolveGetSongMatch(track);
-  if (!match) return EMPTY;
+  if (!match) return { analysis: EMPTY, genres: [] };
 
   const analysis = resultToAnalysis(match);
-  if (analysis.bpm == null && analysis.musicalKey == null) {
-    console.log("[getsongbpm] Match found but no BPM/key:", {
-      artist: track.artist,
-      title: track.title,
-      id: match.id,
-      genres: analysis.genres,
-    });
-    return EMPTY;
-  }
+  return { analysis, genres: analysis.genres };
+}
+
+function hasGetSongAnalysisData(analysis: AudioAnalysis): boolean {
+  return analysis.bpm != null || analysis.musicalKey != null;
+}
+
+export async function fetchGetSongBpmAnalysis(track: GetSongBpmTrackInput): Promise<AudioAnalysis> {
+  const { analysis } = await fetchGetSongBpmData(track);
+  if (!hasGetSongAnalysisData(analysis)) return EMPTY;
 
   console.log("[getsongbpm] Match:", {
-    title: match.title,
-    artist: artistNames(match).join(", "),
+    artist: track.artist,
+    title: track.title,
     bpm: analysis.bpm,
     key: analysis.musicalKey,
     genres: analysis.genres,
@@ -253,16 +270,9 @@ export async function fetchGetSongBpmAnalysis(track: GetSongBpmTrackInput): Prom
 
 /** Genre lookup only — used when another source already supplies BPM/key. */
 export async function fetchGetSongBpmGenres(track: GetSongBpmTrackInput): Promise<string[]> {
-  const match = await resolveGetSongMatch(track);
-  if (!match) return [];
-
-  const genres = extractGenresFromResult(match);
+  const { genres } = await fetchGetSongBpmData(track);
   if (genres.length > 0) {
-    console.log("[getsongbpm] Genres:", {
-      title: match.title,
-      artist: artistNames(match).join(", "),
-      genres,
-    });
+    console.log("[getsongbpm] Genres:", { artist: track.artist, title: track.title, genres });
   }
   return genres;
 }
@@ -280,11 +290,14 @@ async function resolveGetSongMatch(track: GetSongBpmTrackInput): Promise<GetSong
 
   try {
     const combinedLookup = `song:${title} artist:${artist}`;
-    let items = await searchGetSong(apiKey, combinedLookup, "both");
+    const [combinedItems, titleResults] = await Promise.all([
+      searchGetSong(apiKey, combinedLookup, "both"),
+      searchGetSong(apiKey, title, "song"),
+    ]);
 
+    let items = combinedItems;
     if (items.length === 0) {
-      console.log("[getsongbpm] Combined lookup empty, trying title-only search:", { artist, title });
-      const titleResults = await searchGetSong(apiKey, title, "song");
+      console.log("[getsongbpm] Combined lookup empty, using title-only results:", { artist, title });
       items = filterByArtist(titleResults, artist);
     }
 

@@ -1,5 +1,5 @@
 import type { CamelotKey } from "@/lib/camelot";
-import { fetchGetSongBpmAnalysis, fetchGetSongBpmGenres } from "@/lib/getsongbpm";
+import { fetchGetSongBpmAnalysis, fetchGetSongBpmData, type GetSongBpmData } from "@/lib/getsongbpm";
 import { fetchLastFmArtistGenres } from "@/lib/lastfm";
 import { fetchTrackAudioAnalysis as fetchMusicBrainzAnalysis } from "@/lib/musicbrainz";
 import { fetchReccoBeatsBySpotifyIds } from "@/lib/reccobeats";
@@ -81,9 +81,10 @@ function mergeGenreLists(...lists: string[][]): string[] {
 
 async function enrichWithGetSongBpmGenres(
   track: TrackAudioInput,
-  analysis: AudioAnalysis
+  analysis: AudioAnalysis,
+  prefetchedGenres?: string[]
 ): Promise<AudioAnalysis> {
-  const genres = await fetchGetSongBpmGenres(track);
+  const genres = prefetchedGenres ?? (await fetchGetSongBpmData(track)).genres;
   if (genres.length === 0) return analysis;
   return { ...analysis, genres: mergeGenreLists(analysis.genres, genres) };
 }
@@ -100,12 +101,17 @@ async function enrichWithLastFmGenres(
 /** Merge GetSongBPM genres, then Last.fm if still empty. */
 async function finalizeAnalysis(
   track: TrackAudioInput,
-  analysis: AudioAnalysis
+  analysis: AudioAnalysis,
+  options?: { prefetchedGetSongGenres?: string[] }
 ): Promise<AudioAnalysis> {
   let result =
     analysis.source === "getsongbpm"
       ? analysis
-      : await enrichWithGetSongBpmGenres(track, analysis);
+      : await enrichWithGetSongBpmGenres(
+          track,
+          analysis,
+          options?.prefetchedGetSongGenres
+        );
 
   if (result.genres.length === 0) {
     result = await enrichWithLastFmGenres(track, result);
@@ -114,8 +120,11 @@ async function finalizeAnalysis(
   return result;
 }
 
-async function fetchTrackAudioAnalysisFallback(track: TrackAudioInput): Promise<AudioAnalysis> {
-  const getsong = await fetchGetSongBpmAnalysis(track);
+async function fetchTrackAudioAnalysisFallback(
+  track: TrackAudioInput,
+  prefetchedGetsong?: GetSongBpmData
+): Promise<AudioAnalysis> {
+  const getsong = prefetchedGetsong?.analysis ?? (await fetchGetSongBpmAnalysis(track));
   if (hasAnalysisData(getsong)) return getsong;
 
   if (track.spotify_id) {
@@ -146,21 +155,30 @@ async function fetchTrackAudioAnalysisFallback(track: TrackAudioInput): Promise<
 async function fetchTrackAudioAnalysisUncached(
   track: TrackAudioInput
 ): Promise<AudioAnalysis> {
-  if (track.spotify_id) {
-    const reccoMap = await fetchReccoBeatsBySpotifyIds([track.spotify_id]);
-    const recco = reccoMap.get(track.spotify_id);
-    if (recco?.analysis && hasAnalysisData(recco.analysis)) {
-      return finalizeAnalysis(
-        track,
-        mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco)
-      );
-    }
-    if (recco && (recco.popularity != null || recco.genres.length > 0)) {
-      return finalizeAnalysis(track, mergeReccoMetadata(EMPTY_ANALYSIS, recco));
-    }
+  const getsongPromise = fetchGetSongBpmData(track);
+  const reccoPromise = track.spotify_id
+    ? fetchReccoBeatsBySpotifyIds([track.spotify_id])
+    : Promise.resolve(new Map());
+
+  const [reccoMap, getsongData] = await Promise.all([reccoPromise, getsongPromise]);
+  const recco = track.spotify_id ? reccoMap.get(track.spotify_id) : undefined;
+
+  if (recco?.analysis && hasAnalysisData(recco.analysis)) {
+    return finalizeAnalysis(
+      track,
+      mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco),
+      { prefetchedGetSongGenres: getsongData.genres }
+    );
   }
 
-  return finalizeAnalysis(track, await fetchTrackAudioAnalysisFallback(track));
+  if (recco && (recco.popularity != null || recco.genres.length > 0)) {
+    const fallback = await fetchTrackAudioAnalysisFallback(track, getsongData);
+    return finalizeAnalysis(track, mergeReccoMetadata(fallback, recco), {
+      prefetchedGetSongGenres: getsongData.genres,
+    });
+  }
+
+  return finalizeAnalysis(track, await fetchTrackAudioAnalysisFallback(track, getsongData));
 }
 
 export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<AudioAnalysis> {
@@ -207,28 +225,38 @@ export async function fetchTracksAudioAnalysis(
 
   if (uncached.length === 0) return results;
 
-  const reccoMap = await fetchReccoBeatsBySpotifyIds(
-    uncached
-      .map(({ track }) => track.spotify_id)
-      .filter((id): id is string => Boolean(id))
-  );
+  const uncachedIds = uncached
+    .map(({ track }) => track.spotify_id)
+    .filter((id): id is string => Boolean(id));
+
+  const [reccoMap, getsongDataList] = await Promise.all([
+    fetchReccoBeatsBySpotifyIds(uncachedIds),
+    Promise.all(uncached.map(({ track }) => fetchGetSongBpmData(track))),
+  ]);
 
   await Promise.all(
-    uncached.map(async ({ index, track }) => {
+    uncached.map(async ({ index, track }, uncachedIndex) => {
       let result: AudioAnalysis;
+      const getsongData = getsongDataList[uncachedIndex];
 
       if (!track.spotify_id) {
-        result = await fetchTrackAudioAnalysisUncached(track);
+        const fallback = await fetchTrackAudioAnalysisFallback(track, getsongData);
+        result = await finalizeAnalysis(track, fallback, {
+          prefetchedGetSongGenres: getsongData.genres,
+        });
       } else {
         const recco = reccoMap.get(track.spotify_id);
         if (recco?.analysis && hasAnalysisData(recco.analysis)) {
           result = await finalizeAnalysis(
             track,
-            mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco)
+            mergeReccoMetadata(withReccoPopularity(recco.analysis, recco.popularity), recco),
+            { prefetchedGetSongGenres: getsongData.genres }
           );
         } else {
-          const fallback = await fetchTrackAudioAnalysisFallback(track);
-          result = await finalizeAnalysis(track, mergeReccoMetadata(fallback, recco));
+          const fallback = await fetchTrackAudioAnalysisFallback(track, getsongData);
+          result = await finalizeAnalysis(track, mergeReccoMetadata(fallback, recco), {
+            prefetchedGetSongGenres: getsongData.genres,
+          });
         }
         await saveCachedTrackAnalysis(track, result);
       }
