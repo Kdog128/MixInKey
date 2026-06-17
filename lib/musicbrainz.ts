@@ -1,8 +1,8 @@
-import { CamelotKey, parseMusicalKeyString } from "@/lib/camelot";
+import { CamelotKey } from "@/lib/camelot";
+import { fetchAcousticBrainzAnalysis } from "@/lib/acousticbrainz";
 
 const MUSICBRAINZ_BASE = "https://musicbrainz.org/ws/2";
-const ACOUSTICBRAINZ_BASE =
-  (process.env.ACOUSTICBRAINZ_API_URL ?? "https://acousticbrainz.org/api/v1").replace(/\/$/, "");
+const MUSICBRAINZ_TIMEOUT_MS = 3000;
 
 const USER_AGENT =
   process.env.MUSICBRAINZ_USER_AGENT ??
@@ -71,117 +71,49 @@ async function searchRecordingMbids(
 
   await throttleMusicBrainz();
 
-  const res = await fetch(url, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-    cache: "no-store",
-  });
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(MUSICBRAINZ_TIMEOUT_MS),
+    });
 
-  if (!res.ok) {
-    console.warn("[musicbrainz] Recording search failed:", {
-      status: res.status,
+    if (!res.ok) {
+      console.warn("[musicbrainz] Recording search failed:", {
+        status: res.status,
+        artist: artistName,
+        title: recordingTitle,
+      });
+      return [];
+    }
+
+    const data = (await res.json()) as { recordings?: MusicBrainzRecording[] };
+    const recordings = data.recordings ?? [];
+    if (recordings.length === 0) {
+      console.log("[musicbrainz] No recording match:", { artist: artistName, title: recordingTitle });
+      return [];
+    }
+
+    const sorted = [...recordings].sort((a, b) => {
+      if (durationMs && a.length && b.length) {
+        return Math.abs(a.length - durationMs) - Math.abs(b.length - durationMs);
+      }
+      return b.score - a.score;
+    });
+
+    const mbids = sorted.map((r) => r.id);
+    console.log("[musicbrainz] Recording candidates:", mbids.length, "for", recordingTitle);
+    return mbids;
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    console.warn("[musicbrainz] Recording search error:", {
       artist: artistName,
       title: recordingTitle,
+      timedOut,
+      message: err instanceof Error ? err.message : String(err),
     });
     return [];
   }
-
-  const data = (await res.json()) as { recordings?: MusicBrainzRecording[] };
-  const recordings = data.recordings ?? [];
-  if (recordings.length === 0) {
-    console.log("[musicbrainz] No recording match:", { artist: artistName, title: recordingTitle });
-    return [];
-  }
-
-  const sorted = [...recordings].sort((a, b) => {
-    if (durationMs && a.length && b.length) {
-      return Math.abs(a.length - durationMs) - Math.abs(b.length - durationMs);
-    }
-    return b.score - a.score;
-  });
-
-  const mbids = sorted.map((r) => r.id);
-  console.log("[musicbrainz] Recording candidates:", mbids.length, "for", recordingTitle);
-  return mbids;
-}
-
-function readNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
-  if (value && typeof value === "object" && "mean" in value) {
-    const mean = (value as { mean?: unknown }).mean;
-    if (typeof mean === "number" && Number.isFinite(mean) && mean > 0) return mean;
-  }
-  return null;
-}
-
-function readString(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  return null;
-}
-
-function parseAcousticBrainzPayload(data: Record<string, unknown>): Omit<MusicBrainzAnalysis, "mbid"> {
-  const rhythm = data.rhythm as Record<string, unknown> | undefined;
-  const tonal = data.tonal as Record<string, unknown> | undefined;
-
-  const bpm = readNumber(rhythm?.bpm);
-
-  const keyCandidates = [
-    tonal?.key_edma as Record<string, unknown> | undefined,
-    tonal?.key_krumhansl as Record<string, unknown> | undefined,
-    tonal?.key_temperley as Record<string, unknown> | undefined,
-  ];
-
-  let musicalKey: string | null = null;
-  for (const candidate of keyCandidates) {
-    const key = readString(candidate?.key);
-    const scale = readString(candidate?.scale);
-    if (key && scale) {
-      musicalKey = `${key} ${scale}`;
-      break;
-    }
-  }
-
-  if (!musicalKey) {
-    const chordsKey = readString(tonal?.chords_key);
-    const chordsScale = readString(tonal?.chords_scale);
-    if (chordsKey && chordsScale) {
-      musicalKey = `${chordsKey} ${chordsScale}`;
-    }
-  }
-
-  const camelot = musicalKey ? parseMusicalKeyString(musicalKey) : null;
-
-  return { bpm: bpm != null ? Math.round(bpm) : null, musicalKey, camelot };
-}
-
-async function fetchAcousticBrainzAnalysis(mbid: string): Promise<Omit<MusicBrainzAnalysis, "mbid">> {
-  const url = `${ACOUSTICBRAINZ_BASE}/${mbid}/low-level`;
-
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-
-  if (res.status === 404) {
-    console.log("[acousticbrainz] No low-level data for mbid:", mbid);
-    return { bpm: null, musicalKey: null, camelot: null };
-  }
-
-  if (!res.ok) {
-    console.warn("[acousticbrainz] Fetch failed:", { mbid, status: res.status });
-    return { bpm: null, musicalKey: null, camelot: null };
-  }
-
-  const data = (await res.json()) as Record<string, unknown>;
-  const analysis = parseAcousticBrainzPayload(data);
-
-  console.log("[acousticbrainz] Parsed analysis:", {
-    mbid,
-    bpm: analysis.bpm,
-    key: analysis.musicalKey,
-    camelot: analysis.camelot?.label ?? null,
-  });
-
-  return analysis;
 }
 
 export interface TrackAudioInput {

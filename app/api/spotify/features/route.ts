@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSpotifyToken } from "@/lib/spotify-auth";
 import { fetchTracksAudioAnalysis } from "@/lib/audio-analysis";
+import type { AudioAnalysis } from "@/lib/audio-analysis";
 import type { CamelotKey } from "@/lib/camelot";
+
+const FEATURES_OVERALL_TIMEOUT_MS = 8000;
 
 export interface TrackFeatures {
   popularity: number;
@@ -133,25 +136,36 @@ async function resolveSpotifyFeatures(
   });
 }
 
-async function resolveTrackFeatures(
-  tracks: ClientTrackInput[],
-  headers: Record<string, string>
-): Promise<TrackFeatures[]> {
-  const [spotifyFeatures, audioResults] = await Promise.all([
-    resolveSpotifyFeatures(tracks, headers),
-    fetchTracksAudioAnalysis(
-      tracks.map((t) => ({
-        artist: t.artist ?? "",
-        title: t.name ?? "",
-        duration_ms: t.duration_ms,
-        spotify_id: t.id,
-        artwork_url: t.image ?? null,
-      }))
-    ),
-  ]);
+function emptyAudioAnalysis(): AudioAnalysis {
+  return {
+    bpm: null,
+    musicalKey: null,
+    camelot: null,
+    source: null,
+    popularity: null,
+    genres: [],
+  };
+}
 
+function fallbackSpotifyFeatures(
+  tracks: ClientTrackInput[]
+): Omit<TrackFeatures, "bpm" | "musical_key" | "camelot" | "source">[] {
+  return tracks.map((t) => ({
+    popularity: t.popularity ?? 0,
+    duration_ms: t.duration_ms ?? 0,
+    explicit: t.explicit ?? false,
+    genres: [],
+    release_date: t.release_date ?? null,
+  }));
+}
+
+function mergeTrackFeatures(
+  tracks: ClientTrackInput[],
+  spotifyFeatures: Omit<TrackFeatures, "bpm" | "musical_key" | "camelot" | "source">[],
+  audioResults: AudioAnalysis[]
+): TrackFeatures[] {
   return spotifyFeatures.map((spotify, i) => {
-    const audio = audioResults[i];
+    const audio = audioResults[i] ?? emptyAudioAnalysis();
     const clientPopularity = tracks[i]?.popularity;
     const popularity =
       audio.popularity ??
@@ -167,6 +181,53 @@ async function resolveTrackFeatures(
       source: audio.source,
     };
   });
+}
+
+async function resolveTrackFeatures(
+  tracks: ClientTrackInput[],
+  headers: Record<string, string>
+): Promise<TrackFeatures[]> {
+  const spotifyPromise = resolveSpotifyFeatures(tracks, headers);
+  const audioPromise = fetchTracksAudioAnalysis(
+    tracks.map((t) => ({
+      artist: t.artist ?? "",
+      title: t.name ?? "",
+      duration_ms: t.duration_ms,
+      spotify_id: t.id,
+      artwork_url: t.image ?? null,
+    }))
+  );
+
+  let spotifyFeatures: Awaited<ReturnType<typeof resolveSpotifyFeatures>> | undefined;
+  let audioResults: Awaited<ReturnType<typeof fetchTracksAudioAnalysis>> | undefined;
+
+  void spotifyPromise.then((result) => {
+    spotifyFeatures = result;
+  });
+  void audioPromise.then((result) => {
+    audioResults = result;
+  });
+
+  await Promise.race([
+    Promise.allSettled([spotifyPromise, audioPromise]),
+    new Promise<void>((resolve) => setTimeout(resolve, FEATURES_OVERALL_TIMEOUT_MS)),
+  ]);
+
+  const spotifyTimedOut = spotifyFeatures === undefined;
+  const audioTimedOut = audioResults === undefined;
+
+  if (spotifyTimedOut || audioTimedOut) {
+    console.warn("[spotify/features] Overall timeout — returning partial results:", {
+      timeoutMs: FEATURES_OVERALL_TIMEOUT_MS,
+      spotifyTimedOut,
+      audioTimedOut,
+    });
+  }
+
+  const spotify = spotifyFeatures ?? fallbackSpotifyFeatures(tracks);
+  const audio = audioResults ?? tracks.map(() => emptyAudioAnalysis());
+
+  return mergeTrackFeatures(tracks, spotify, audio);
 }
 
 export async function POST(request: NextRequest) {
