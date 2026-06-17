@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   CamelotKey,
   getBpmCompatibility,
@@ -16,9 +17,10 @@ import {
   type KeyCompatStyle,
 } from "@/lib/camelot";
 import { CamelotWheel } from "@/components/camelot-wheel";
+import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import { COHESIVE_INNER_CARD_CLASS, cohesiveSurfaceStyle } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
-import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb, ListPlus } from "lucide-react";
+import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb, ListPlus, Info } from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
 
@@ -42,10 +44,18 @@ interface CompatibilityCardProps {
 }
 
 function getScoreStyle(score: number): { color: string; label: string } {
-  if (score >= 90) return { color: "#15803d", label: "Highly Compatible" };
-  if (score >= 70) return { color: "#22c55e", label: "Compatible" };
-  if (score >= 50) return { color: "#eab308", label: "Moderate" };
-  if (score >= 30) return { color: "#f97316", label: "Borderline" };
+  if (score >= 90) {
+    return { color: "#15803d", label: "Highly Compatible" };
+  }
+  if (score >= 70) {
+    return { color: "#22c55e", label: "Compatible" };
+  }
+  if (score >= 50) {
+    return { color: "#eab308", label: "Moderate" };
+  }
+  if (score >= 30) {
+    return { color: "#f97316", label: "Borderline" };
+  }
   return { color: "#ef4444", label: "Incompatible" };
 }
 
@@ -69,33 +79,113 @@ function getDefaultBadgeLabel(score: number): string {
   return "Divergent";
 }
 
+const SCORE_WEIGHTING_WITH_AUDIO =
+  "Weighted: key (25%), BPM (25%), popularity (15%), duration (15%), genre (10%), release (10%)";
+const SCORE_WEIGHTING_WITHOUT_AUDIO =
+  "Weighted: popularity (30%), duration (25%), genre (25%), release date (20%)";
+
+const SCORE_TOOLTIP_SHADOW =
+  "shadow-[0_8px_24px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)]";
+
+function ScoreWeightingTooltip({ text, id }: { text: string; id: string }) {
+  return (
+    <div
+      id={id}
+      role="tooltip"
+      className={cn(
+        "pointer-events-none absolute top-[calc(100%+10px)] right-0 z-[100]",
+        "w-max max-w-[min(240px,calc(100vw-2rem))]",
+        "opacity-0 transition-opacity duration-150",
+        "group-hover/info:opacity-100 group-focus-within/info:opacity-100"
+      )}
+    >
+      <div
+        className={cn(
+          "rounded-lg border border-white/10 bg-[#0f0f14] px-3 py-2",
+          "text-[10px] leading-snug text-zinc-300 text-pretty",
+          SCORE_TOOLTIP_SHADOW
+        )}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+
 // ─── Score Ring ────────────────────────────────────────────────────────────────
 
-function ScoreRing({ score, size = 140 }: { score: number; size?: number }) {
-  const r = (size - 20) / 2;
+function ScoreRing({ score, size = 185 }: { score: number; size?: number }) {
+  const glowFilterId = useId();
+  const strokeWidth = size * 0.0625;
+  const ringPadding = size * 0.125;
+  const r = (size - ringPadding) / 2;
   const circ = 2 * Math.PI * r;
   const progress = (score / 100) * circ;
   const { color, label } = getScoreStyle(score);
+  const cx = size / 2;
+  const cy = size / 2;
+  const glowPad = size * 0.0875;
+  const blurStdDev = size * 0.022;
 
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
-          <circle
-            cx={size / 2} cy={size / 2} r={r} fill="none"
-            stroke={color} strokeWidth="10"
-            strokeDasharray={`${progress} ${circ}`}
-            strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 8px ${color})`, transition: "stroke-dasharray 1s ease" }}
-          />
+        <svg width={size} height={size} overflow="visible" aria-hidden="true">
+          <defs>
+            <filter
+              id={glowFilterId}
+              filterUnits="userSpaceOnUse"
+              x={cx - r - glowPad}
+              y={cy - r - glowPad}
+              width={(r + glowPad) * 2}
+              height={(r + glowPad) * 2}
+            >
+              <feGaussianBlur in="SourceGraphic" stdDeviation={blurStdDev} result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <g transform={`rotate(-90 ${cx} ${cy})`}>
+            <circle
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill="none"
+              stroke="rgba(255,255,255,0.06)"
+              strokeWidth={strokeWidth}
+            />
+            <circle
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill="none"
+              stroke={color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${progress} ${circ}`}
+              strokeLinecap="round"
+              filter={`url(#${glowFilterId})`}
+              style={{ transition: "stroke-dasharray 1s ease" }}
+            />
+          </g>
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold tabular-nums" style={{ color }}>{score}</span>
-          <span className="text-xs text-muted-foreground">/ 100</span>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span
+            className="font-bold tabular-nums leading-none"
+            style={{ color, fontSize: size * 0.1875 }}
+          >
+            {score}
+          </span>
+          <span
+            className="text-muted-foreground"
+            style={{ fontSize: size * 0.075, marginTop: size * 0.025 }}
+          >
+            / 100
+          </span>
         </div>
       </div>
-      <span className="text-sm font-semibold" style={{ color }}>{label}</span>
+      <span className="text-sm font-semibold md:text-base" style={{ color }}>{label}</span>
     </div>
   );
 }
@@ -110,6 +200,7 @@ function StatRow({
   valueB,
   badgeText,
   badgeStyle,
+  valueRowClassName,
 }: {
   label: string;
   icon: React.ElementType;
@@ -118,13 +209,14 @@ function StatRow({
   valueB: React.ReactNode;
   badgeText?: string;
   badgeStyle?: KeyCompatStyle;
+  valueRowClassName?: string;
 }) {
   const resolvedBadgeStyle = badgeStyle ?? getStatBadgeStyle(score);
   const barColor = resolvedBadgeStyle.color;
   const badgeLabel = badgeText ?? getDefaultBadgeLabel(score);
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Icon className="size-4" />
@@ -141,11 +233,14 @@ function StatRow({
           {badgeLabel}
         </span>
       </div>
-      <div className="flex items-center gap-2 min-w-0">
+      <div className={cn("flex min-w-0 items-center gap-2", valueRowClassName)}>
         <div className="flex-1 min-w-0 flex items-center gap-2 justify-end overflow-hidden">
           <span className="text-xs font-mono text-[#c084fc] truncate text-right w-full">{valueA}</span>
         </div>
-        <div className="w-24 h-1.5 rounded-full bg-white/5 overflow-hidden relative flex-shrink-0">
+        <div
+          className="w-24 h-1.5 rounded-full bg-white/5 overflow-hidden relative flex-shrink-0 cursor-help"
+          title="Bar length reflects compatibility score, not the raw distance between values."
+        >
           <div
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
@@ -222,17 +317,39 @@ export function CompatibilityCard({
   const keyCompatStyle = keyCompat ? getKeyCompatStyle(keyCompat.type) : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
+
+      <div className="flex items-center gap-3 overflow-visible border-b border-border/50 pb-5">
+        <div
+          className="size-1.5 rounded-full"
+          style={{
+            background: "#a855f7",
+            boxShadow: "0 0 6px #a855f7",
+          }}
+        />
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-foreground">
+          Compatibility Analysis
+        </h2>
+        <span className="group/info relative ml-auto inline-flex">
+          <button
+            type="button"
+            aria-label="Score weighting breakdown"
+            aria-describedby="compatibility-score-weighting"
+            className="inline-flex rounded-full p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a855f7]/50"
+          >
+            <Info className="size-3.5" />
+          </button>
+          <ScoreWeightingTooltip
+            id="compatibility-score-weighting"
+            text={hasAudioAnalysis ? SCORE_WEIGHTING_WITH_AUDIO : SCORE_WEIGHTING_WITHOUT_AUDIO}
+          />
+        </span>
+      </div>
 
       {/* Score + Camelot wheel */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-        <div className="flex flex-col items-center gap-4">
-          <ScoreRing score={overallScore} size={160} />
-          <p className="text-xs text-muted-foreground text-center text-pretty max-w-[240px]">
-            {hasAudioAnalysis
-              ? "Weighted: key (25%), BPM (25%), popularity (15%), duration (15%), genre (10%), release (10%)"
-              : "Weighted: popularity (30%), duration (25%), genre (25%), release date (20%)"}
-          </p>
+        <div className="flex flex-col items-center">
+          <ScoreRing score={overallScore} size={185} />
         </div>
         <div className="flex flex-col gap-3">
           {camelotA && camelotB ? (
@@ -264,12 +381,14 @@ export function CompatibilityCard({
         <div className="flex items-center gap-2 text-sm font-semibold border-b border-border/50 pb-3">
           <Activity className="size-4 text-muted-foreground" />
           <span>Track Comparison</span>
-          <div className="ml-auto flex gap-4 text-xs text-muted-foreground">
+          <div className="ml-auto flex gap-4 text-xs">
             <div className="flex items-center gap-1.5">
-              <div className="size-2 rounded-full bg-[#a855f7]" />Track 1
+              <div className="size-2 rounded-full bg-[#a855f7]" />
+              <span className="text-[#c084fc]">Track 1</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="size-2 rounded-full bg-[#3b82f6]" />Track 2
+              <div className="size-2 rounded-full bg-[#3b82f6]" />
+              <span className="text-[#93c5fd]">Track 2</span>
             </div>
           </div>
         </div>
@@ -296,6 +415,7 @@ export function CompatibilityCard({
           score={genreScore}
           valueA={featuresA.genres.slice(0, 2).join(", ") || "Unknown"}
           valueB={featuresB.genres.slice(0, 2).join(", ") || "Unknown"}
+          valueRowClassName="mt-0.5"
         />
 
         <StatRow
@@ -320,16 +440,8 @@ export function CompatibilityCard({
           score={keyCompat?.score ?? 50}
           badgeText={keyCompat?.label}
           badgeStyle={keyCompatStyle ?? undefined}
-          valueA={
-            camelotA
-              ? `${camelotA.label} (${camelotA.musicalKey})`
-              : "Unavailable"
-          }
-          valueB={
-            camelotB
-              ? `${camelotB.label} (${camelotB.musicalKey})`
-              : "Unavailable"
-          }
+          valueA={camelotA ? camelotA.label : "Unavailable"}
+          valueB={camelotB ? camelotB.label : "Unavailable"}
         />
       </div>
 
@@ -337,9 +449,44 @@ export function CompatibilityCard({
       {(featuresA.genres.length > 0 || featuresB.genres.length > 0) && (
         <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-2")} style={cohesiveSurfaceStyle()}>
           <p className="text-xs font-semibold text-muted-foreground">Artist Genres</p>
-          <div className="grid grid-cols-2 gap-3 text-xs min-w-0">
-            <p className="text-[#c084fc] truncate min-w-0 overflow-hidden">{featuresA.genres.join(", ") || "—"}</p>
-            <p className="text-[#93c5fd] truncate min-w-0 overflow-hidden">{featuresB.genres.join(", ") || "—"}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center justify-center">
+              <span className="group/genre-a relative inline-flex min-w-0 max-w-full justify-center">
+                <p
+                  className="min-w-0 max-w-full truncate whitespace-nowrap overflow-hidden text-ellipsis text-center text-xs text-[#c084fc]"
+                  title={featuresA.genres.join(", ")}
+                >
+                  {featuresA.genres.join(", ") || "—"}
+                </p>
+                {featuresA.genres.length > 0 && (
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute top-[calc(100%+6px)] left-1/2 z-50 w-max max-w-[15rem] -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-center text-[11px] leading-snug text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 group-hover/genre-a:visible group-hover/genre-a:opacity-100"
+                  >
+                    {featuresA.genres.join(", ")}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="w-24 flex-shrink-0" aria-hidden="true" />
+            <div className="flex min-w-0 flex-1 items-center justify-center">
+              <span className="group/genre-b relative inline-flex min-w-0 max-w-full justify-center">
+                <p
+                  className="min-w-0 max-w-full truncate whitespace-nowrap overflow-hidden text-ellipsis text-center text-xs text-[#93c5fd]"
+                  title={featuresB.genres.join(", ")}
+                >
+                  {featuresB.genres.join(", ") || "—"}
+                </p>
+                {featuresB.genres.length > 0 && (
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute top-[calc(100%+6px)] left-1/2 z-50 w-max max-w-[15rem] -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-center text-[11px] leading-snug text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 group-hover/genre-b:visible group-hover/genre-b:opacity-100"
+                  >
+                    {featuresB.genres.join(", ")}
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -353,7 +500,7 @@ export function CompatibilityCard({
               <button
                 type="button"
                 onClick={onAddToSetA}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#a855f7]/30 bg-[#a855f7]/10 px-3 py-2 text-xs font-semibold text-[#c084fc] transition-colors hover:bg-[#a855f7]/20"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#a855f7]/30 bg-[#a855f7]/10 px-3 py-2 text-xs font-semibold text-[#c084fc] transition-[colors,box-shadow,border-color] hover:border-[#a855f7]/50 hover:bg-[#a855f7]/20 hover:shadow-[0_0_16px_rgba(168,85,247,0.4)]"
               >
                 <ListPlus className="size-3.5" />
                 Add Track 1 to Set
@@ -363,7 +510,7 @@ export function CompatibilityCard({
               <button
                 type="button"
                 onClick={onAddToSetB}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#3b82f6]/30 bg-[#3b82f6]/10 px-3 py-2 text-xs font-semibold text-[#93c5fd] transition-colors hover:bg-[#3b82f6]/20"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#3b82f6]/30 bg-[#3b82f6]/10 px-3 py-2 text-xs font-semibold text-[#93c5fd] transition-[colors,box-shadow,border-color] hover:border-[#3b82f6]/50 hover:bg-[#3b82f6]/20 hover:shadow-[0_0_16px_rgba(59,130,246,0.4)]"
               >
                 <ListPlus className="size-3.5" />
                 Add Track 2 to Set
@@ -389,6 +536,10 @@ export function CompatibilityCard({
         >
           {mixingTip ?? "BPM and key data needed for a mixing tip."}
         </p>
+      </div>
+
+      <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3")} style={cohesiveSurfaceStyle()}>
+        <SourceBadgesFooter />
       </div>
 
     </div>

@@ -41,6 +41,9 @@ async function fetchTrackFeatures(track: TrackResult): Promise<Pick<TrackFeature
   if (!res.ok || !data.features?.[0]) {
     throw new Error(data.error ?? "Failed to fetch track data");
   }
+  if (data.partial) {
+    throw new Error(data.message ?? "Still analyzing — try searching again in a moment");
+  }
   const features = data.features[0] as TrackFeatures;
   return {
     bpm: features.bpm,

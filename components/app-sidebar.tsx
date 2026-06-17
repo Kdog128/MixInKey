@@ -99,7 +99,7 @@ export function AppSidebar() {
             showIcon
             className="shrink-0"
             wordmarkClassName={cn(
-              "gradient-flow-text group-hover/sidebar:overflow-visible",
+              "text-[#c084fc] group-hover/sidebar:overflow-visible",
               logoWordmarkRevealClass
             )}
           />
@@ -126,8 +126,9 @@ export function AppSidebar() {
                 <GradientFlowIcon name={icon} />
                 <span
                   className={cn(
-                    "gradient-flow-text min-w-0 text-sm font-medium leading-none",
-                    labelRevealClass
+                    "min-w-0 text-sm font-medium leading-none",
+                    labelRevealClass,
+                    active ? "text-[#c084fc]" : "text-muted-foreground"
                   )}
                 >
                   {label}

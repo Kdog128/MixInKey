@@ -244,6 +244,7 @@ export function TrackSearch({
   }
 
   function handleSelect(track: TrackResult) {
+    inputRef.current?.blur();
     onSelect(track);
     setQuery("");
     setOpen(false);
@@ -306,7 +307,7 @@ export function TrackSearch({
     <div
       className={cn(
         "flex min-w-0 w-full flex-col",
-        compact ? "min-h-0 gap-1" : "min-h-[6.5rem] gap-2"
+        compact ? "min-h-0 gap-1" : "gap-2"
       )}
       ref={containerRef}
     >
@@ -315,7 +316,7 @@ export function TrackSearch({
         className={cn(
           "inline-flex w-fit items-center rounded-md px-2 py-0.5",
           "text-xs font-semibold tracking-wide uppercase",
-          selectedTrack ? "text-muted-foreground" : accentStyles.label
+          accentStyles.label
         )}
       >
         {label}

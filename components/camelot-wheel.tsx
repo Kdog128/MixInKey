@@ -85,6 +85,36 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
 
   return (
     <div className={cn("flex flex-col items-center gap-3", className)}>
+      {/* Legend */}
+      {!disabled && (keyA || keyB) && (
+        <div className="flex flex-wrap justify-center gap-4 text-xs">
+          {keyA && (
+            <div className="flex items-center gap-1.5">
+              <div
+                className="size-2.5 flex-shrink-0 rounded-full"
+                style={{ background: "#a855f7", boxShadow: "0 0 6px #a855f7" }}
+              />
+              <span>
+                <span className="font-medium text-[#c084fc]">Track 1:</span>{" "}
+                <span className="font-semibold text-[#c084fc]">{keyA.label}</span>
+              </span>
+            </div>
+          )}
+          {keyB && (
+            <div className="flex items-center gap-1.5">
+              <div
+                className="size-2.5 flex-shrink-0 rounded-full"
+                style={{ background: "#3b82f6", boxShadow: "0 0 6px #3b82f6" }}
+              />
+              <span>
+                <span className="font-medium text-[#93c5fd]">Track 2:</span>{" "}
+                <span className="font-semibold text-[#93c5fd]">{keyB.label}</span>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="relative w-full max-w-[280px]">
       <svg
         viewBox="0 0 400 400"
@@ -191,7 +221,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 y={bMid.y - 6}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize="9.5"
+                fontSize="11"
                 fontWeight="700"
                 fill={highlightB ? "#fff" : "rgba(255,255,255,0.65)"}
                 fontFamily="sans-serif"
@@ -203,7 +233,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 y={bMid.y + 6}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize="7.5"
+                fontSize="8.5"
                 fill={highlightB ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.38)"}
                 fontFamily="sans-serif"
               >
@@ -216,7 +246,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 y={aMid.y - 6}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize="9.5"
+                fontSize="11"
                 fontWeight="700"
                 fill={highlightA ? "#fff" : "rgba(255,255,255,0.55)"}
                 fontFamily="sans-serif"
@@ -228,7 +258,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 y={aMid.y + 6}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize="7"
+                fontSize="8"
                 fill={highlightA ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)"}
                 fontFamily="sans-serif"
               >
@@ -246,38 +276,6 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
         </div>
       )}
       </div>
-
-      {/* Legend */}
-      {!disabled && (keyA || keyB) && (
-        <div className="flex flex-wrap justify-center gap-4 text-xs">
-          {keyA && (
-            <div className="flex items-center gap-1.5">
-              <div
-                className="size-2.5 rounded-full flex-shrink-0"
-                style={{ background: "#a855f7", boxShadow: "0 0 6px #a855f7" }}
-              />
-              <span className="text-muted-foreground">
-                Track 1:{" "}
-                <span className="text-foreground font-semibold">{keyA.label}</span>{" "}
-                <span className="text-muted-foreground/60">({keyA.musicalKey})</span>
-              </span>
-            </div>
-          )}
-          {keyB && (
-            <div className="flex items-center gap-1.5">
-              <div
-                className="size-2.5 rounded-full flex-shrink-0"
-                style={{ background: "#3b82f6", boxShadow: "0 0 6px #3b82f6" }}
-              />
-              <span className="text-muted-foreground">
-                Track 2:{" "}
-                <span className="text-foreground font-semibold">{keyB.label}</span>{" "}
-                <span className="text-muted-foreground/60">({keyB.musicalKey})</span>
-              </span>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

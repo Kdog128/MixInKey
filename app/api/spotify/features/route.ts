@@ -4,7 +4,9 @@ import { fetchTracksAudioAnalysis } from "@/lib/audio-analysis";
 import type { AudioAnalysis } from "@/lib/audio-analysis";
 import type { CamelotKey } from "@/lib/camelot";
 
-const FEATURES_OVERALL_TIMEOUT_MS = 8000;
+const FEATURES_OVERALL_TIMEOUT_MS = 12000;
+const ANALYSIS_PENDING_MESSAGE =
+  "Still analyzing — try searching again in a moment";
 
 export interface TrackFeatures {
   popularity: number;
@@ -186,7 +188,11 @@ function mergeTrackFeatures(
 async function resolveTrackFeatures(
   tracks: ClientTrackInput[],
   headers: Record<string, string>
-): Promise<TrackFeatures[]> {
+): Promise<{
+  features: TrackFeatures[];
+  partial: boolean;
+  message?: string;
+}> {
   const spotifyPromise = resolveSpotifyFeatures(tracks, headers);
   const audioPromise = fetchTracksAudioAnalysis(
     tracks.map((t) => ({
@@ -226,8 +232,17 @@ async function resolveTrackFeatures(
 
   const spotify = spotifyFeatures ?? fallbackSpotifyFeatures(tracks);
   const audio = audioResults ?? tracks.map(() => emptyAudioAnalysis());
+  const features = mergeTrackFeatures(tracks, spotify, audio);
 
-  return mergeTrackFeatures(tracks, spotify, audio);
+  if (audioTimedOut) {
+    return {
+      features,
+      partial: true,
+      message: ANALYSIS_PENDING_MESSAGE,
+    };
+  }
+
+  return { features, partial: false };
 }
 
 export async function POST(request: NextRequest) {
@@ -239,8 +254,13 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await getSpotifyToken();
-    const features = await resolveTrackFeatures(tracks, { Authorization: `Bearer ${token}` });
-    return NextResponse.json({ features });
+    const { features, partial, message } = await resolveTrackFeatures(tracks, {
+      Authorization: `Bearer ${token}`,
+    });
+    return NextResponse.json({
+      features,
+      ...(partial ? { partial: true, message } : {}),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -260,11 +280,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const token = await getSpotifyToken();
-    const features = await resolveTrackFeatures(
+    const { features, partial, message } = await resolveTrackFeatures(
       idList.map((id) => ({ id })),
       { Authorization: `Bearer ${token}` }
     );
-    return NextResponse.json({ features });
+    return NextResponse.json({
+      features,
+      ...(partial ? { partial: true, message } : {}),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";
     return NextResponse.json({ error: msg }, { status: 500 });
