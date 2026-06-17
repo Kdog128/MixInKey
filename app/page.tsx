@@ -6,6 +6,7 @@ import { TrackSearch, TrackResult } from "@/components/track-search";
 import { CompatibilityCard, TrackFeatures } from "@/components/compatibility-card";
 import { AppShell } from "@/components/app-shell";
 import { addTrackToSetlist, buildSetlistTrack } from "@/lib/setlist";
+import { COHESIVE_SURFACE_CLASS } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
 
 function SourceBadge({
@@ -38,7 +39,8 @@ function FooterCategory({ label }: { label: string }) {
 function SourceBadgesFooter({ className }: { className?: string }) {
   return (
     <footer className={cn("flex w-full justify-center", className)}>
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-3 max-w-3xl">
+      <div className={cn("rounded-2xl px-4 py-2", COHESIVE_SURFACE_CLASS)}>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-3 max-w-3xl">
         <div className="flex items-center gap-2">
           <FooterCategory label="Tracks" />
           <SourceBadge className="border-emerald-500/35 bg-emerald-500/10 text-emerald-400">
@@ -72,6 +74,7 @@ function SourceBadgesFooter({ className }: { className?: string }) {
           <SourceBadge className="border-red-500/35 bg-red-500/10 text-red-400">
             Last.fm
           </SourceBadge>
+        </div>
         </div>
       </div>
     </footer>
@@ -230,17 +233,18 @@ export default function Home() {
 
         <div className="flex flex-col">
         {/* Header */}
-        <header className="mb-3 w-full text-left">
+        <header className="mb-3 w-full">
           <div
-            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-2xl border px-4 py-2.5"
+            className={cn(
+              "inline-flex min-w-0 max-w-full items-center gap-2 rounded-2xl border border-[#a855f7]/60 px-4 py-2.5",
+              COHESIVE_SURFACE_CLASS
+            )}
             style={{
-              borderColor: "rgba(168,85,247,0.3)",
-              background: "rgba(168,85,247,0.1)",
-              boxShadow: "0 0 24px rgba(168,85,247,0.2)",
+              boxShadow: "0 0 28px rgba(168,85,247,0.35)",
             }}
           >
             <div className="flex size-10 flex-shrink-0 items-center justify-center">
-              <Disc3 className="size-7" style={{ color: "#a855f7" }} />
+              <Disc3 className="size-7" style={{ color: "#a855f7" }} aria-hidden="true" />
             </div>
             <h1 className="truncate text-xl font-bold tracking-tight text-foreground md:text-2xl">
               Compatibility
@@ -251,7 +255,10 @@ export default function Home() {
         {/* Search Panel */}
         <section
           aria-label="Track selection"
-          className="rounded-2xl border border-border bg-card p-5 md:p-6 flex flex-col gap-5"
+          className={cn(
+            "rounded-2xl border border-border p-5 md:p-6 flex flex-col gap-5",
+            COHESIVE_SURFACE_CLASS
+          )}
           style={{ boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}
         >
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] gap-4 items-start min-w-0">
@@ -295,7 +302,7 @@ export default function Home() {
             <div className="min-w-0">
               <TrackSearch
                 label="Track 2"
-                accentColor="purple"
+                accentColor="blue"
                 selectedTrack={trackB}
                 onSelect={handleSelectB}
                 onClear={handleClearB}

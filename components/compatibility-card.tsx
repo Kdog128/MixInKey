@@ -11,9 +11,11 @@ import {
   getReleaseDateCompatibility,
   getMixingTip,
   getOverallCompatibilityFromTrackData,
+  getStatBadgeStyle,
+  parseMusicalKeyString,
+  type KeyCompatStyle,
 } from "@/lib/camelot";
 import { CamelotWheel } from "@/components/camelot-wheel";
-import { cn } from "@/lib/utils";
 import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb, ListPlus } from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
@@ -43,6 +45,26 @@ function getScoreStyle(score: number): { color: string; label: string } {
   if (score >= 50) return { color: "#eab308", label: "Moderate" };
   if (score >= 30) return { color: "#f97316", label: "Borderline" };
   return { color: "#ef4444", label: "Incompatible" };
+}
+
+function resolveCamelotKey(camelot: CamelotKey | null | undefined): CamelotKey | null {
+  if (!camelot) return null;
+  if (
+    typeof camelot.number === "number" &&
+    (camelot.letter === "A" || camelot.letter === "B") &&
+    camelot.label
+  ) {
+    return camelot;
+  }
+  if (camelot.label) return parseMusicalKeyString(camelot.label);
+  if (camelot.musicalKey) return parseMusicalKeyString(camelot.musicalKey);
+  return null;
+}
+
+function getDefaultBadgeLabel(score: number): string {
+  if (score >= 70) return "Compatible";
+  if (score >= 50) return "Moderate";
+  return "Divergent";
 }
 
 // ─── Score Ring ────────────────────────────────────────────────────────────────
@@ -93,12 +115,11 @@ function StatRow({
   valueA: React.ReactNode;
   valueB: React.ReactNode;
   badgeText?: string;
-  badgeStyle?: { color: string; bg: string; border: string };
+  badgeStyle?: KeyCompatStyle;
 }) {
-  const compatible = score >= 70;
-  const neutral = score >= 50 && score < 70;
-  const barColor = badgeStyle?.color ?? (compatible ? "#10b981" : neutral ? "#f59e0b" : "#ef4444");
-  const badgeLabel = badgeText ?? (compatible ? "Compatible" : neutral ? "Moderate" : "Divergent");
+  const resolvedBadgeStyle = badgeStyle ?? getStatBadgeStyle(score);
+  const barColor = resolvedBadgeStyle.color;
+  const badgeLabel = badgeText ?? getDefaultBadgeLabel(score);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -107,29 +128,16 @@ function StatRow({
           <Icon className="size-4" />
           <span>{label}</span>
         </div>
-        {badgeStyle ? (
-          <span
-            className="text-xs px-2 py-0.5 rounded-full border font-medium"
-            style={{
-              color: badgeStyle.color,
-              backgroundColor: badgeStyle.bg,
-              borderColor: badgeStyle.border,
-            }}
-          >
-            {badgeLabel}
-          </span>
-        ) : (
-          <div className={cn(
-            "text-xs px-2 py-0.5 rounded-full border font-medium",
-            compatible
-              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-              : neutral
-              ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-              : "bg-red-500/10 text-red-400 border-red-500/20"
-          )}>
-            {badgeLabel}
-          </div>
-        )}
+        <span
+          className="rounded-full border px-2 py-0.5 text-xs font-medium"
+          style={{
+            color: resolvedBadgeStyle.color,
+            backgroundColor: resolvedBadgeStyle.bg,
+            borderColor: resolvedBadgeStyle.border,
+          }}
+        >
+          {badgeLabel}
+        </span>
       </div>
       <div className="flex items-center gap-2 min-w-0">
         <div className="flex-1 min-w-0 flex items-center gap-2 justify-end overflow-hidden">
@@ -173,6 +181,9 @@ export function CompatibilityCard({
   onAddToSetA,
   onAddToSetB,
 }: CompatibilityCardProps) {
+  const camelotA = resolveCamelotKey(featuresA.camelot);
+  const camelotB = resolveCamelotKey(featuresB.camelot);
+
   const popScore = getPopularityCompatibility(featuresA.popularity, featuresB.popularity);
   const durScore = getDurationCompatibility(featuresA.duration_ms, featuresB.duration_ms);
   const genreScore = getGenreCompatibility(featuresA.genres, featuresB.genres);
@@ -182,8 +193,8 @@ export function CompatibilityCard({
       ? getBpmCompatibility(featuresA.bpm, featuresB.bpm)
       : null;
   const keyCompat =
-    featuresA.camelot && featuresB.camelot
-      ? getKeyCompatibility(featuresA.camelot, featuresB.camelot)
+    camelotA && camelotB
+      ? getKeyCompatibility(camelotA, camelotB)
       : null;
 
   const overallScore = getOverallCompatibilityFromTrackData(
@@ -197,7 +208,7 @@ export function CompatibilityCard({
 
   const hasAudioAnalysis = Boolean(
     (featuresA.bpm != null && featuresB.bpm != null) ||
-    (featuresA.camelot && featuresB.camelot)
+    (camelotA && camelotB)
   );
 
   function formatDuration(ms: number) {
@@ -222,8 +233,8 @@ export function CompatibilityCard({
           </p>
         </div>
         <div className="flex flex-col gap-3">
-          {featuresA.camelot && featuresB.camelot ? (
-            <CamelotWheel keyA={featuresA.camelot} keyB={featuresB.camelot} />
+          {camelotA && camelotB ? (
+            <CamelotWheel keyA={camelotA} keyB={camelotB} />
           ) : (
             <CamelotWheel disabled comingSoonNote="BPM and key unavailable for one or both tracks" />
           )}
@@ -238,7 +249,9 @@ export function CompatibilityCard({
               <p className="text-sm font-semibold" style={{ color: keyCompatStyle.color }}>
                 {keyCompat.label}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">{keyCompat.description}</p>
+              <p className="mt-1 text-xs" style={{ color: keyCompatStyle.color, opacity: 0.85 }}>
+                {keyCompat.description}
+              </p>
             </div>
           )}
         </div>
@@ -306,13 +319,13 @@ export function CompatibilityCard({
           badgeText={keyCompat?.label}
           badgeStyle={keyCompatStyle ?? undefined}
           valueA={
-            featuresA.camelot
-              ? `${featuresA.camelot.label} (${featuresA.camelot.musicalKey})`
+            camelotA
+              ? `${camelotA.label} (${camelotA.musicalKey})`
               : "Unavailable"
           }
           valueB={
-            featuresB.camelot
-              ? `${featuresB.camelot.label} (${featuresB.camelot.musicalKey})`
+            camelotB
+              ? `${camelotB.label} (${camelotB.musicalKey})`
               : "Unavailable"
           }
         />
@@ -365,8 +378,12 @@ export function CompatibilityCard({
           <span>Mixing Tip</span>
         </div>
         <p
-          className={cn("text-sm", !keyCompatStyle && "text-muted-foreground")}
-          style={keyCompatStyle ? { color: keyCompatStyle.color } : undefined}
+          className="text-sm"
+          style={
+            keyCompatStyle
+              ? { color: keyCompatStyle.color }
+              : { color: "oklch(0.55 0.04 265)" }
+          }
         >
           {mixingTip ?? "BPM and key data needed for a mixing tip."}
         </p>

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Search, X, Music, Loader2, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { COHESIVE_SURFACE_CLASS } from "@/lib/ui-surfaces";
 import { isFavorite, toggleFavorite, getFavorites, enrichFavoritesWithImages } from "@/lib/favorites";
 
 export interface TrackResult {
@@ -30,15 +31,9 @@ interface TrackSearchProps {
   enableFavoritesFilter?: boolean;
 }
 
-const TRACK_SLOT_HEIGHT_CLASS = "h-[4.75rem]";
 const SELECTED_TRACK_CARD_CLASS = cn(
-  "relative flex items-center gap-3 rounded-xl border p-3 min-w-0 w-full overflow-hidden",
-  TRACK_SLOT_HEIGHT_CLASS,
-  "border-[#a855f7]/35 shadow-[0_0_20px_rgba(168,85,247,0.12)]"
-);
-const SEARCH_FIELD_CLASS = cn(
-  "flex items-center rounded-xl border bg-surface ring-2 ring-transparent transition-all border-border",
-  TRACK_SLOT_HEIGHT_CLASS
+  COHESIVE_SURFACE_CLASS,
+  "relative flex h-[4.75rem] items-center gap-3 rounded-xl border border-border p-3 min-w-0 w-full overflow-hidden"
 );
 
 export function TrackSearch({
@@ -246,11 +241,11 @@ export function TrackSearch({
       hover: "hover:bg-[#a855f7]/10",
     },
     blue: {
-      ring: "focus-within:ring-[#a855f7]/40",
-      border: "focus-within:border-[#a855f7]/60",
-      label: "text-[#a855f7]",
-      badge: "bg-[#a855f7]/20 text-[#c084fc] border-[#a855f7]/30",
-      hover: "hover:bg-[#a855f7]/10",
+      ring: "focus-within:ring-[#3b82f6]/40",
+      border: "focus-within:border-[#3b82f6]/60",
+      label: "text-[#60a5fa]",
+      badge: "bg-[#3b82f6]/20 text-[#93c5fd] border-[#3b82f6]/30",
+      hover: "hover:bg-[#3b82f6]/10",
     },
   }[accentColor];
 
@@ -279,9 +274,7 @@ export function TrackSearch({
               />
               <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
             </>
-          ) : (
-            <div className="absolute inset-0 bg-surface-raised" aria-hidden="true" />
-          )}
+          ) : null}
 
           <div className="relative z-10 flex items-center gap-3 min-w-0 w-full">
             {selectedTrack.image ? (
@@ -343,9 +336,10 @@ export function TrackSearch({
         <div className="relative">
           <div
             className={cn(
-              SEARCH_FIELD_CLASS,
+              "flex items-center rounded-xl border bg-surface ring-2 ring-transparent transition-all",
               accentStyles.ring,
-              accentStyles.border
+              accentStyles.border,
+              "border-border"
             )}
           >
             {loading ? (
@@ -364,7 +358,7 @@ export function TrackSearch({
               onFocus={handleFocus}
               placeholder={`Search for a track...`}
               className={cn(
-                "flex-1 bg-transparent px-3 py-0 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0",
+                "flex-1 bg-transparent px-3 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0",
                 enableFavoritesFilter ? "pr-1" : query ? "pr-1" : ""
               )}
               aria-label={`Search for ${label}`}

@@ -215,6 +215,29 @@ export function getKeyCompatStyle(type: CompatibilityType): KeyCompatStyle {
   }
 }
 
+/** Score-based badge colors for stat rows (compatible / moderate / divergent). */
+export function getStatBadgeStyle(score: number): KeyCompatStyle {
+  if (score >= 70) {
+    return {
+      color: "#34d399",
+      bg: "rgba(52, 211, 153, 0.12)",
+      border: "rgba(52, 211, 153, 0.28)",
+    };
+  }
+  if (score >= 50) {
+    return {
+      color: "#fbbf24",
+      bg: "rgba(251, 191, 36, 0.12)",
+      border: "rgba(251, 191, 36, 0.28)",
+    };
+  }
+  return {
+    color: "#f87171",
+    bg: "rgba(248, 113, 113, 0.12)",
+    border: "rgba(248, 113, 113, 0.28)",
+  };
+}
+
 /** Short hover tooltip for mix compatibility badges in the Set Planner. */
 export function getMixBadgeTooltip(type: CompatibilityType): string {
   switch (type) {
