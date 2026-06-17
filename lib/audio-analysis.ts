@@ -7,6 +7,7 @@ import { fetchSoundNetAnalysis } from "@/lib/soundnet";
 import {
   getCachedTrackAnalysis,
   getCachedTracksAnalysis,
+  hasResolvedBpmKeyCache,
   saveCachedTrackAnalysis,
   upsertTrackCacheMetadata,
 } from "@/lib/tracks-cache";
@@ -77,6 +78,18 @@ function mergeGenreLists(...lists: string[][]): string[] {
     }
   }
   return merged;
+}
+
+function mergeWithCachedPartial(
+  fresh: AudioAnalysis,
+  cached: AudioAnalysis | null | undefined
+): AudioAnalysis {
+  if (!cached) return fresh;
+  return {
+    ...fresh,
+    popularity: fresh.popularity ?? cached.popularity,
+    genres: mergeGenreLists(cached.genres, fresh.genres),
+  };
 }
 
 async function enrichWithGetSongBpmGenres(
@@ -182,17 +195,25 @@ async function fetchTrackAudioAnalysisUncached(
 }
 
 export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<AudioAnalysis> {
+  let partialCache: AudioAnalysis | null = null;
+
   if (track.spotify_id) {
     const cached = await getCachedTrackAnalysis(track.spotify_id);
     if (cached) {
-      if (track.artwork_url?.trim()) {
-        void upsertTrackCacheMetadata(track);
+      if (hasResolvedBpmKeyCache(cached)) {
+        if (track.artwork_url?.trim()) {
+          void upsertTrackCacheMetadata(track);
+        }
+        return cached;
       }
-      return cached;
+      partialCache = cached;
     }
   }
 
-  const result = await fetchTrackAudioAnalysisUncached(track);
+  const result = mergeWithCachedPartial(
+    await fetchTrackAudioAnalysisUncached(track),
+    partialCache
+  );
   await saveCachedTrackAnalysis(track, result);
   return result;
 }
@@ -206,21 +227,29 @@ export async function fetchTracksAudioAnalysis(
 
   const cacheMap = await getCachedTracksAnalysis(spotifyIds);
   const results: AudioAnalysis[] = new Array(tracks.length);
-  const uncached: { index: number; track: TrackAudioInput }[] = [];
+  const uncached: {
+    index: number;
+    track: TrackAudioInput;
+    partialCache: AudioAnalysis | null;
+  }[] = [];
 
   for (let i = 0; i < tracks.length; i++) {
     const track = tracks[i];
     if (track.spotify_id) {
       const cached = cacheMap.get(track.spotify_id);
       if (cached) {
-        results[i] = cached;
-        if (track.artwork_url?.trim()) {
-          void upsertTrackCacheMetadata(track);
+        if (hasResolvedBpmKeyCache(cached)) {
+          results[i] = cached;
+          if (track.artwork_url?.trim()) {
+            void upsertTrackCacheMetadata(track);
+          }
+          continue;
         }
+        uncached.push({ index: i, track, partialCache: cached });
         continue;
       }
     }
-    uncached.push({ index: i, track });
+    uncached.push({ index: i, track, partialCache: null });
   }
 
   if (uncached.length === 0) return results;
@@ -235,7 +264,7 @@ export async function fetchTracksAudioAnalysis(
   ]);
 
   await Promise.all(
-    uncached.map(async ({ index, track }, uncachedIndex) => {
+    uncached.map(async ({ index, track, partialCache }, uncachedIndex) => {
       let result: AudioAnalysis;
       const getsongData = getsongDataList[uncachedIndex];
 
@@ -258,6 +287,7 @@ export async function fetchTracksAudioAnalysis(
             prefetchedGetSongGenres: getsongData.genres,
           });
         }
+        result = mergeWithCachedPartial(result, partialCache);
         await saveCachedTrackAnalysis(track, result);
       }
 

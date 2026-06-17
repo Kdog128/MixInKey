@@ -9,6 +9,7 @@ import {
   type CompatibilityType,
 } from "@/lib/camelot";
 import { cn } from "@/lib/utils";
+import { COHESIVE_INNER_CARD_CLASS, COHESIVE_SURFACE_CLASS, cohesiveSurfaceStyle } from "@/lib/ui-surfaces";
 
 interface EnergyArcProps {
   tracks: SetlistTrack[];
@@ -410,8 +411,9 @@ function EnergyArcColorLegend() {
           "flex size-7 items-center justify-center rounded-lg border transition-colors",
           legendOpen
             ? "border-[#a855f7]/40 bg-[#a855f7]/15 text-[#c084fc]"
-            : "border-border/60 bg-surface-raised/80 text-muted-foreground hover:border-[#a855f7]/30 hover:text-[#c084fc]"
+            : cn(COHESIVE_SURFACE_CLASS, "border-border/60 text-muted-foreground hover:border-[#a855f7]/30 hover:text-[#c084fc]")
         )}
+        style={legendOpen ? undefined : cohesiveSurfaceStyle()}
       >
         <CircleHelp className="size-4" />
       </button>
@@ -422,7 +424,10 @@ function EnergyArcColorLegend() {
           role="dialog"
           aria-label="Transition color guide"
         >
-          <div className="px-3.5 py-2.5 border-b border-border/50 bg-surface-raised/40">
+          <div
+            className={cn("px-3.5 py-2.5 border-b border-border/50", COHESIVE_SURFACE_CLASS)}
+            style={cohesiveSurfaceStyle()}
+          >
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               Transition Colors
             </p>
@@ -487,10 +492,10 @@ function EnergyArcCard({
   return (
     <div
       className={cn(
-        "relative w-full min-w-0 max-w-full rounded-2xl border bg-surface/60 p-3 sm:p-4",
+        cn(COHESIVE_INNER_CARD_CLASS, "relative w-full min-w-0 max-w-full p-3 sm:p-4"),
         className
       )}
-      style={style}
+      style={{ ...cohesiveSurfaceStyle(), ...style }}
     >
       <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20">
         <EnergyArcColorLegend />

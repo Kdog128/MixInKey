@@ -2,49 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { Heart, Loader2, Music } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import {
   enrichFavoritesWithImages,
   getFavorites,
   type FavoriteTrack,
 } from "@/lib/favorites";
+import {
+  COHESIVE_INNER_CARD_CLASS,
+  PAGE_CONTENT_CLASS,
+  PAGE_SECTION_CARD_CLASS,
+  cohesiveCardStyle,
+  cohesiveSurfaceStyle,
+} from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
-
-function PageBackground() {
-  return (
-    <>
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `
-            linear-gradient(rgba(168,85,247,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(168,85,247,0.03) 1px, transparent 1px)
-          `,
-          backgroundSize: "40px 40px",
-        }}
-        aria-hidden="true"
-      />
-      <div
-        className="fixed top-0 left-1/3 w-[500px] h-[500px] rounded-full pointer-events-none"
-        style={{
-          background: "radial-gradient(circle, rgba(168,85,247,0.07) 0%, transparent 70%)",
-          filter: "blur(60px)",
-        }}
-        aria-hidden="true"
-      />
-    </>
-  );
-}
 
 function FavoriteRow({ track }: { track: FavoriteTrack }) {
   return (
     <div className="flex items-center gap-3 border-b border-border/50 px-4 py-3 last:border-b-0">
-      <div className="relative size-12 flex-shrink-0 overflow-hidden rounded-lg border border-border bg-surface">
+      <div
+        className={cn(
+          "relative size-12 flex-shrink-0 overflow-hidden rounded-lg border border-border",
+          COHESIVE_INNER_CARD_CLASS
+        )}
+        style={cohesiveSurfaceStyle()}
+      >
         {track.image ? (
-          <img
-            src={track.image}
-            alt=""
-            className="size-full object-cover"
-          />
+          <img src={track.image} alt="" className="size-full object-cover" />
         ) : (
           <div className="flex size-full items-center justify-center">
             <Music className="size-5 text-muted-foreground/50" />
@@ -114,61 +98,41 @@ export default function FavoritesPage() {
   }, []);
 
   return (
-      <main className="min-h-screen font-sans">
-        <PageBackground />
+    <main className="min-h-screen font-sans">
+      <div className={PAGE_CONTENT_CLASS}>
+        <PageHeader
+          icon="heart"
+          title="Favorites"
+          description="Tracks you've saved from search and compatibility analysis."
+        />
 
-        <div className="relative z-10 mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-8 px-4 py-12">
-          <header className="flex items-start gap-4">
-            <div
-              className="flex size-14 flex-shrink-0 items-center justify-center rounded-2xl border"
-              style={{
-                borderColor: "rgba(244,63,94,0.35)",
-                background: "rgba(244,63,94,0.1)",
-                boxShadow: "0 0 24px rgba(244,63,94,0.15)",
-              }}
-            >
-              <Heart className="size-7" style={{ color: "#fb7185" }} />
+        <section className={cn(PAGE_SECTION_CARD_CLASS, "overflow-hidden p-0")} style={cohesiveCardStyle()}>
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-3xl font-bold tracking-tight text-foreground md:text-4xl">
-                Favorites
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Tracks you&apos;ve saved from search and compatibility analysis.
+          ) : favorites.length === 0 ? (
+            <div className="px-6 py-16 text-center">
+              <Heart className="mx-auto size-8 text-muted-foreground/40" />
+              <p className="mt-4 text-sm text-muted-foreground">
+                No favorites yet — heart a track in search to save it here.
               </p>
             </div>
-          </header>
-
-          <section
-            className="overflow-hidden rounded-2xl border border-border bg-card"
-            style={{ boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}
-          >
-            {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          ) : (
+            <div>
+              <div className="hidden border-b border-border/50 px-4 py-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground sm:grid sm:grid-cols-[3rem_minmax(0,1fr)_5.5rem_4rem] sm:items-center sm:gap-3">
+                <span aria-hidden="true" />
+                <span>Track</span>
+                <span className="text-right">BPM</span>
+                <span className="text-center">Key</span>
               </div>
-            ) : favorites.length === 0 ? (
-              <div className="px-6 py-16 text-center">
-                <Heart className="mx-auto size-8 text-muted-foreground/40" />
-                <p className="mt-4 text-sm text-muted-foreground">
-                  No favorites yet — heart a track in search to save it here.
-                </p>
-              </div>
-            ) : (
-              <div>
-                <div className="hidden border-b border-border/50 px-4 py-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground sm:grid sm:grid-cols-[3rem_minmax(0,1fr)_5.5rem_4rem] sm:items-center sm:gap-3">
-                  <span aria-hidden="true" />
-                  <span>Track</span>
-                  <span className="text-right">BPM</span>
-                  <span className="text-center">Key</span>
-                </div>
-                {favorites.map((track) => (
-                  <FavoriteRow key={track.spotify_id} track={track} />
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      </main>
+              {favorites.map((track) => (
+                <FavoriteRow key={track.spotify_id} track={track} />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }

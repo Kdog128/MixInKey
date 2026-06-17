@@ -219,6 +219,20 @@
     transform 0.5s ease;
 }
 
+:root {
+  --gradient-flow-duration: 5s;
+  --gradient-flow-delay: 0s;
+  --gradient-flow-easing: linear;
+  --gradient-flow-stops: linear-gradient(
+    90deg,
+    #c084fc 0%,
+    #60a5fa 25%,
+    #a78bfa 50%,
+    #60a5fa 75%,
+    #c084fc 100%
+  );
+}
+
 @keyframes gradient-text-flow {
   0% {
     background-position: 200% 50%;
@@ -228,18 +242,36 @@
   }
 }
 
-.empty-state-gradient-text {
-  background-image: linear-gradient(
-    90deg,
-    #c084fc 0%,
-    #60a5fa 25%,
-    #a78bfa 50%,
-    #60a5fa 75%,
-    #c084fc 100%
-  );
+.empty-state-gradient-text,
+.gradient-flow-text,
+.gradient-flow-icon {
+  background-image: var(--gradient-flow-stops);
   background-size: 200% auto;
+  background-position: 200% 50%;
   -webkit-background-clip: text;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: gradient-text-flow 5s linear infinite;
+  animation-name: gradient-text-flow;
+  animation-duration: var(--gradient-flow-duration);
+  animation-timing-function: var(--gradient-flow-easing);
+  animation-delay: var(--gradient-flow-delay);
+  animation-iteration-count: infinite;
+}
+
+.gradient-flow-icon {
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: initial;
+  color: initial;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.cohesive-surface {
+  background-color: rgba(9, 9, 11, 0.8);
 }

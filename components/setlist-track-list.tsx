@@ -16,6 +16,7 @@ import {
   type TransitionAnalysis,
 } from "@/lib/camelot";
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
+import { COHESIVE_INNER_CARD_CLASS, cohesiveSurfaceStyle } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
 
 const SETLIST_TRACK_GRID_CLASS =
@@ -149,7 +150,7 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
 
   if (tracks.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-surface-raised px-4 py-10 text-center">
+      <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-10 text-center")} style={cohesiveSurfaceStyle()}>
         <p className="text-sm text-muted-foreground">No tracks yet — search above to build your set.</p>
       </div>
     );
@@ -180,11 +181,13 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
                       ref={dragProvided.innerRef}
                       {...dragProvided.draggableProps}
                       className={cn(
-                        "rounded-xl border border-border bg-surface-raised px-3 py-4 min-w-0",
+                        COHESIVE_INNER_CARD_CLASS,
+                        "px-3 py-4 min-w-0",
                         "flex items-center gap-2 sm:gap-0",
                         SETLIST_TRACK_GRID_CLASS,
                         snapshot.isDragging && "shadow-lg ring-1 ring-white/10"
                       )}
+                      style={cohesiveSurfaceStyle()}
                     >
                       <button
                         type="button"

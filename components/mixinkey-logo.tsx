@@ -1,9 +1,9 @@
-import { Disc3 } from "lucide-react";
+import { GradientFlowIcon } from "@/components/gradient-flow-icon";
 import { cn } from "@/lib/utils";
 
 interface MixInKeyLogoProps {
   className?: string;
-  /** Show Disc3 icon beside the wordmark (sidebar). */
+  /** Show Headphones icon beside the wordmark (sidebar). */
   showIcon?: boolean;
   /** Hide wordmark — icon only (mobile sidebar). */
   iconOnly?: boolean;
@@ -12,6 +12,8 @@ interface MixInKeyLogoProps {
   size?: "sm" | "md" | "lg";
   /** Extra classes for the wordmark text (e.g. sidebar reveal). */
   wordmarkClassName?: string;
+  /** Extra classes for the logo icon (size, layout). */
+  iconClassName?: string;
 }
 
 const sizeClasses = {
@@ -27,18 +29,17 @@ export function MixInKeyLogo({
   as: Tag = "span",
   size = "sm",
   wordmarkClassName,
+  iconClassName,
 }: MixInKeyLogoProps) {
   return (
     <Tag className={cn("inline-flex min-w-0 items-center gap-2", className)}>
-      {showIcon && (
-        <Disc3 className="size-5 shrink-0" style={{ color: "#a855f7" }} aria-hidden="true" />
-      )}
+      {showIcon && <GradientFlowIcon name="headphones" className={iconClassName} />}
       {!iconOnly && (
         <span
           className={cn(
-            "truncate font-bold tracking-tight text-[#a855f7]",
-            sizeClasses[size],
-            wordmarkClassName
+            "truncate font-bold tracking-tight group-hover/sidebar:truncate-none",
+            wordmarkClassName ?? "gradient-flow-text",
+            sizeClasses[size]
           )}
         >
           MixInKey

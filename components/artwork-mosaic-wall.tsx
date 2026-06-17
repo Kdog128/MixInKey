@@ -19,6 +19,19 @@ interface ArtworkMosaicWallProps {
 const TILE_COUNT = 72;
 const IMAGE_OPACITY = 0.19;
 const CROSSFADE_MS = 1000;
+const ARTWORK_FETCH_LIMIT = 72;
+
+function dedupeArtworkUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of urls) {
+    const url = raw?.trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    unique.push(url);
+  }
+  return unique;
+}
 
 /** Persist artwork URLs across client navigations so the mosaic does not refetch/reset. */
 let cachedArtworkUrls: string[] | null = null;
@@ -30,14 +43,23 @@ async function fetchArtworkUrls(): Promise<string[]> {
 
   artworkFetchPromise = (async () => {
     try {
-      const res = await fetch("/api/tracks/artwork-wall?limit=30");
-      const data = (await res.json()) as { artwork_urls?: string[] };
+      const res = await fetch(`/api/tracks/artwork-wall?limit=${ARTWORK_FETCH_LIMIT}`);
+      const data = (await res.json()) as {
+        artwork_urls?: string[];
+        unique_count?: number;
+        count?: number;
+      };
       if (res.ok && Array.isArray(data.artwork_urls)) {
-        cachedArtworkUrls = data.artwork_urls.filter((url) => url?.trim());
+        cachedArtworkUrls = dedupeArtworkUrls(data.artwork_urls);
+        console.log("[mosaic] Fetched artwork URLs:", {
+          apiReportedUnique: data.unique_count ?? data.count ?? data.artwork_urls.length,
+          clientUniqueAfterDedupe: cachedArtworkUrls.length,
+          rawFromApi: data.artwork_urls.length,
+        });
         return cachedArtworkUrls;
       }
-    } catch {
-      // fall through
+    } catch (err) {
+      console.warn("[mosaic] Artwork fetch failed:", err);
     }
     cachedArtworkUrls = [];
     return cachedArtworkUrls;
@@ -121,9 +143,13 @@ function pickUrlAvoiding(
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Duplicate unique URLs until tileCount, then Fisher-Yates shuffle for initial spread. */
+/** Build tile assignments: use all unique URLs first when possible, else expand then Fisher-Yates shuffle. */
 function expandAndShuffleAssignments(uniqueUrls: string[], tileCount: number): string[] {
   if (uniqueUrls.length === 0) return [];
+
+  if (uniqueUrls.length >= tileCount) {
+    return shuffleArray([...uniqueUrls]).slice(0, tileCount);
+  }
 
   const expanded: string[] = [];
   while (expanded.length < tileCount) {
@@ -326,6 +352,8 @@ function CyclingTile({
 
 export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWallProps) {
   const [artworkUrls, setArtworkUrls] = useState<string[]>(() => cachedArtworkUrls ?? []);
+  /** Fresh random seed each mount so tile order is never memoized across page loads. */
+  const [layoutSeed] = useState(() => Math.random());
   const cols = useMosaicGridCols();
 
   useEffect(() => {
@@ -334,7 +362,7 @@ export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWal
     let cancelled = false;
 
     void fetchArtworkUrls().then((urls) => {
-      if (!cancelled) setArtworkUrls(urls);
+      if (!cancelled) setArtworkUrls(dedupeArtworkUrls(urls));
     });
 
     return () => {
@@ -343,11 +371,28 @@ export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWal
   }, [active]);
 
   const gridLayout = useMemo(() => {
-    if (artworkUrls.length === 0) return null;
-    const assignments = expandAndShuffleAssignments(artworkUrls, TILE_COUNT);
-    const initialPairs = buildInitialPairs(assignments, artworkUrls, cols, TILE_COUNT);
-    return { artworkUrls, initialPairs };
-  }, [artworkUrls, cols]);
+    const uniqueUrls = dedupeArtworkUrls(artworkUrls);
+    if (uniqueUrls.length === 0) return null;
+
+    const assignments = expandAndShuffleAssignments(uniqueUrls, TILE_COUNT);
+    const initialPairs = buildInitialPairs(assignments, uniqueUrls, cols, TILE_COUNT);
+
+    const assignmentCounts = new Map<string, number>();
+    for (const url of assignments) {
+      assignmentCounts.set(url, (assignmentCounts.get(url) ?? 0) + 1);
+    }
+
+    console.log("[mosaic] Grid layout:", {
+      layoutSeed,
+      uniquePoolSize: uniqueUrls.length,
+      tileCount: TILE_COUNT,
+      cols,
+      maxRepeatCount: Math.max(...assignmentCounts.values()),
+      firstEightTiles: assignments.slice(0, 8),
+    });
+
+    return { uniqueUrls, initialPairs };
+  }, [artworkUrls, cols, layoutSeed]);
 
   if (!active) return null;
 
@@ -362,7 +407,7 @@ export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWal
     >
       {gridLayout ? (
         <MosaicGridProvider
-          shuffledUrls={gridLayout.artworkUrls}
+          shuffledUrls={gridLayout.uniqueUrls}
           cols={cols}
           initialPairs={gridLayout.initialPairs}
         >
@@ -373,7 +418,7 @@ export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWal
                 tileIndex={tileIndex}
                 initialUrlA={pair.urlA}
                 initialUrlB={pair.urlB}
-                canCycle={artworkUrls.length > 1}
+                canCycle={gridLayout.uniqueUrls.length > 1}
               />
             ))}
           </div>

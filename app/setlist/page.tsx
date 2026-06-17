@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ListMusic, Loader2, Save, Disc3, FolderOpen, Trash2, FilePlus, ChevronDown, CheckCircle2, Pencil } from "lucide-react";
+import { Loader2, Save, Disc3, FolderOpen, Trash2, FilePlus, ChevronDown, CheckCircle2, Pencil } from "lucide-react";
 import { TrackSearch, type TrackResult } from "@/components/track-search";
 import { SetlistTrackList } from "@/components/setlist-track-list";
 import { EnergyArc } from "@/components/energy-arc";
+import { PageHeader } from "@/components/page-header";
 import {
   addTrackToSetlist,
   buildSetlistTrack,
@@ -18,6 +19,16 @@ import {
   type SetlistTrack,
 } from "@/lib/setlist";
 import type { TrackFeatures } from "@/components/compatibility-card";
+import {
+  COHESIVE_CARD_CLASS,
+  COHESIVE_CONTROL_SURFACE_CLASS,
+  COHESIVE_ENERGY_SHADOW,
+  COHESIVE_INNER_CARD_CLASS,
+  PAGE_CONTENT_CLASS,
+  PAGE_SECTION_CARD_CLASS,
+  cohesiveCardStyle,
+  cohesiveSurfaceStyle,
+} from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
 
 async function fetchTrackFeatures(track: TrackResult): Promise<Pick<TrackFeatures, "bpm" | "musical_key" | "camelot">> {
@@ -437,62 +448,34 @@ export default function SetlistPage() {
 
   return (
     <main className="min-h-screen font-sans">
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `
-            linear-gradient(rgba(168,85,247,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(168,85,247,0.03) 1px, transparent 1px)
-          `,
-          backgroundSize: "40px 40px",
-        }}
-        aria-hidden="true"
-      />
-      <div
-        className="fixed top-0 left-1/3 w-[500px] h-[500px] rounded-full pointer-events-none"
-        style={{
-          background: "radial-gradient(circle, rgba(168,85,247,0.07) 0%, transparent 70%)",
-          filter: "blur(60px)",
-        }}
-        aria-hidden="true"
-      />
-
-      <div className="relative z-10 max-w-3xl mx-auto px-4 py-12 flex flex-col gap-8 min-w-0 w-full">
+      <div className={PAGE_CONTENT_CLASS}>
         <header className="flex flex-col gap-4">
-          <div className="flex items-start gap-4">
-            <div
-              className="flex items-center justify-center size-14 rounded-2xl border flex-shrink-0"
-              style={{
-                borderColor: "rgba(168,85,247,0.3)",
-                background: "rgba(168,85,247,0.1)",
-                boxShadow: "0 0 24px rgba(168,85,247,0.2)",
-              }}
-            >
-              <ListMusic className="size-7" style={{ color: "#a855f7" }} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center min-w-0">
-                <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground truncate">
-                  {pageTitle}
-                </h1>
-                {hasNamedSet && (
-                  <button
-                    type="button"
-                    onClick={handleRenameClick}
-                    aria-label="Rename setlist"
-                    className="flex-shrink-0 ml-4 inline-flex items-center justify-center size-8 rounded-lg border border-border bg-surface text-muted-foreground hover:text-[#c084fc] hover:border-[#a855f7]/40 hover:bg-[#a855f7]/10 transition-colors"
-                  >
-                    <Pencil className="size-3.5" />
-                  </button>
-                )}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Build and reorder your DJ set — drag tracks to plan your flow.
-              </p>
-            </div>
-          </div>
+          <PageHeader
+            icon="list-music"
+            title={pageTitle}
+            description="Build and reorder your DJ set — drag tracks to plan your flow."
+            titleExtra={
+              hasNamedSet ? (
+                <button
+                  type="button"
+                  onClick={handleRenameClick}
+                  aria-label="Rename setlist"
+                  className={cn(
+                    "ml-2 inline-flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:border-[#a855f7]/40 hover:bg-[#a855f7]/10 hover:text-[#c084fc]",
+                    COHESIVE_CONTROL_SURFACE_CLASS
+                  )}
+                  style={cohesiveSurfaceStyle()}
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+              ) : null
+            }
+          />
 
-          <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+          <div
+            className={cn(COHESIVE_INNER_CARD_CLASS, "flex flex-wrap items-center justify-between gap-4 px-4 py-3")}
+            style={cohesiveSurfaceStyle()}
+          >
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2 text-sm">
                 <Disc3 className="size-4 text-muted-foreground" />
@@ -525,8 +508,9 @@ export default function SetlistPage() {
                     "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
                     savedSetsOpen
                       ? "border-[#a855f7]/40 bg-[#a855f7]/10 text-[#c084fc]"
-                      : "border-border bg-surface hover:border-[#a855f7]/40 hover:bg-[#a855f7]/10 hover:text-[#c084fc]"
+                      : cn(COHESIVE_CONTROL_SURFACE_CLASS, "hover:border-[#a855f7]/40 hover:bg-[#a855f7]/10 hover:text-[#c084fc]")
                   )}
+                  style={savedSetsOpen ? undefined : cohesiveSurfaceStyle()}
                 >
                   <FolderOpen className="size-4" />
                   Saved Sets
@@ -632,10 +616,12 @@ export default function SetlistPage() {
                 onClick={handleNewSetClick}
                 disabled={tracks.length === 0 && !setlistName.trim()}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium transition-colors",
+                  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  COHESIVE_CONTROL_SURFACE_CLASS,
                   "hover:border-[#a855f7]/40 hover:bg-[#a855f7]/10 hover:text-[#c084fc]",
-                  "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:bg-surface disabled:hover:text-muted-foreground"
+                  "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-muted-foreground"
                 )}
+                style={cohesiveSurfaceStyle()}
               >
                 <FilePlus className="size-4" />
                 New Set
@@ -644,10 +630,7 @@ export default function SetlistPage() {
           </div>
         </header>
 
-        <section
-          className="rounded-2xl border border-border bg-card p-5 md:p-6"
-          style={{ boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}
-        >
+        <section className={PAGE_SECTION_CARD_CLASS} style={cohesiveCardStyle()}>
           <div className="relative">
             <TrackSearch
               key={searchKey}
@@ -667,15 +650,15 @@ export default function SetlistPage() {
         </section>
 
         <section
-          className="rounded-2xl border border-[#a855f7]/20 bg-card p-4 md:p-6 min-w-0"
-          style={{ boxShadow: "0 0 60px rgba(168,85,247,0.1)" }}
+          className={cn(PAGE_SECTION_CARD_CLASS, "min-w-0")}
+          style={cohesiveCardStyle(COHESIVE_ENERGY_SHADOW)}
         >
           <EnergyArc tracks={tracks} onBpmChange={handleBpmChange} />
         </section>
 
         <section
-          className="rounded-2xl border border-border bg-card p-5 md:p-6 flex flex-col gap-4"
-          style={{ boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}
+          className={cn(PAGE_SECTION_CARD_CLASS, "flex flex-col gap-4")}
+          style={cohesiveCardStyle()}
         >
           <h2 className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
             Track List
@@ -730,7 +713,7 @@ export default function SetlistPage() {
               }
             }}
           />
-          <div className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+          <div className={cn("relative w-full max-w-sm p-6 shadow-2xl", COHESIVE_CARD_CLASS)} style={cohesiveCardStyle()}>
             <h2
               id="save-set-dialog-title"
               className="text-lg font-semibold text-foreground"
@@ -754,7 +737,11 @@ export default function SetlistPage() {
               }}
               placeholder="Setlist name (e.g. Friday Warm-Up)"
               disabled={saving}
-              className="mt-4 w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60"
+              className={cn(
+                "mt-4 w-full rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60",
+                COHESIVE_CONTROL_SURFACE_CLASS
+              )}
+              style={cohesiveSurfaceStyle()}
             />
             {saveModalError && (
               <p className="mt-2 text-sm text-red-400">{saveModalError}</p>
@@ -767,7 +754,11 @@ export default function SetlistPage() {
                   setSaveModalError(null);
                 }}
                 disabled={saving}
-                className="inline-flex items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-raised transition-colors disabled:opacity-60"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium text-foreground hover:border-[#a855f7]/30 transition-colors disabled:opacity-60",
+                  COHESIVE_CONTROL_SURFACE_CLASS
+                )}
+                style={cohesiveSurfaceStyle()}
               >
                 Cancel
               </button>
@@ -807,7 +798,7 @@ export default function SetlistPage() {
               }
             }}
           />
-          <div className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+          <div className={cn("relative w-full max-w-sm p-6 shadow-2xl", COHESIVE_CARD_CLASS)} style={cohesiveCardStyle()}>
             <h2
               id="rename-set-dialog-title"
               className="text-lg font-semibold text-foreground"
@@ -831,7 +822,11 @@ export default function SetlistPage() {
               }}
               placeholder="Setlist name"
               disabled={renaming}
-              className="mt-4 w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-[#a855f7]/60 focus:ring-2 focus:ring-[#a855f7]/20 disabled:opacity-60"
+              className={cn(
+                "mt-4 w-full rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-[#a855f7]/60 focus:ring-2 focus:ring-[#a855f7]/20 disabled:opacity-60",
+                COHESIVE_CONTROL_SURFACE_CLASS
+              )}
+              style={cohesiveSurfaceStyle()}
             />
             {renameModalError && (
               <p className="mt-2 text-sm text-red-400">{renameModalError}</p>
@@ -844,7 +839,11 @@ export default function SetlistPage() {
                   setRenameModalError(null);
                 }}
                 disabled={renaming}
-                className="inline-flex items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-raised transition-colors disabled:opacity-60"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium text-foreground hover:border-[#a855f7]/30 transition-colors disabled:opacity-60",
+                  COHESIVE_CONTROL_SURFACE_CLASS
+                )}
+                style={cohesiveSurfaceStyle()}
               >
                 Cancel
               </button>
@@ -879,7 +878,7 @@ export default function SetlistPage() {
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setShowNewSetConfirm(false)}
           />
-          <div className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+          <div className={cn("relative w-full max-w-sm p-6 shadow-2xl", COHESIVE_CARD_CLASS)} style={cohesiveCardStyle()}>
             <h2
               id="new-set-dialog-title"
               className="text-lg font-semibold text-foreground"
@@ -896,7 +895,11 @@ export default function SetlistPage() {
               <button
                 type="button"
                 onClick={() => setShowNewSetConfirm(false)}
-                className="inline-flex items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-raised transition-colors"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium text-foreground hover:border-[#a855f7]/30 transition-colors",
+                  COHESIVE_CONTROL_SURFACE_CLASS
+                )}
+                style={cohesiveSurfaceStyle()}
               >
                 Cancel
               </button>

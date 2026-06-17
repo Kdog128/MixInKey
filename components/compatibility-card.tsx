@@ -16,6 +16,8 @@ import {
   type KeyCompatStyle,
 } from "@/lib/camelot";
 import { CamelotWheel } from "@/components/camelot-wheel";
+import { COHESIVE_INNER_CARD_CLASS, cohesiveSurfaceStyle } from "@/lib/ui-surfaces";
+import { cn } from "@/lib/utils";
 import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb, ListPlus } from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
@@ -258,7 +260,7 @@ export function CompatibilityCard({
       </div>
 
       {/* Stats panel */}
-      <div className="rounded-xl border border-border bg-surface-raised p-4 flex flex-col gap-5">
+      <div className={cn(COHESIVE_INNER_CARD_CLASS, "p-4 flex flex-col gap-5")} style={cohesiveSurfaceStyle()}>
         <div className="flex items-center gap-2 text-sm font-semibold border-b border-border/50 pb-3">
           <Activity className="size-4 text-muted-foreground" />
           <span>Track Comparison</span>
@@ -333,7 +335,7 @@ export function CompatibilityCard({
 
       {/* Genre detail */}
       {(featuresA.genres.length > 0 || featuresB.genres.length > 0) && (
-        <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex flex-col gap-2">
+        <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-2")} style={cohesiveSurfaceStyle()}>
           <p className="text-xs font-semibold text-muted-foreground">Artist Genres</p>
           <div className="grid grid-cols-2 gap-3 text-xs min-w-0">
             <p className="text-[#c084fc] truncate min-w-0 overflow-hidden">{featuresA.genres.join(", ") || "—"}</p>
@@ -344,7 +346,7 @@ export function CompatibilityCard({
 
       {/* Add to set */}
       {(onAddToSetA || onAddToSetB) && (
-        <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex flex-col gap-3">
+        <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-3")} style={cohesiveSurfaceStyle()}>
           <p className="text-xs font-semibold text-muted-foreground">Set Planner</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {onAddToSetA && (
@@ -372,7 +374,7 @@ export function CompatibilityCard({
       )}
 
       {/* Mixing tip */}
-      <div className="rounded-xl border border-border bg-surface-raised px-4 py-3 flex flex-col gap-2">
+      <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-2")} style={cohesiveSurfaceStyle()}>
         <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
           <Lightbulb className="size-3.5" />
           <span>Mixing Tip</span>

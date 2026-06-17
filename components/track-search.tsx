@@ -3,6 +3,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Search, X, Music, Loader2, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  NEUTRAL_FIELD_SURFACE_CLASS,
+  NEUTRAL_SURFACE_STYLE,
+} from "@/lib/ui-surfaces";
 import { isFavorite, toggleFavorite, getFavorites, enrichFavoritesWithImages } from "@/lib/favorites";
 
 export interface TrackResult {
@@ -28,18 +32,24 @@ interface TrackSearchProps {
   bpm?: number | null;
   musicalKey?: string | null;
   enableFavoritesFilter?: boolean;
+  /** Tighter label/field spacing (Set Planner uses default). */
+  compact?: boolean;
+  /** Custom empty-input placeholder (main page rotating artist hints). */
+  placeholder?: string;
+  /** Crossfade placeholder text when the placeholder value changes (main page). */
+  animatePlaceholder?: boolean;
+  /** Notifies parent when the results dropdown opens or closes. */
+  onOpenChange?: (isOpen: boolean) => void;
 }
 
-/** Opaque surface — no backdrop-blur so the mosaic cannot bleed through or flicker. */
-const TRACK_FIELD_BG_CLASS = "bg-black/70";
-const TRACK_FIELD_BG_STYLE = { backgroundColor: "rgba(0, 0, 0, 0.7)" } as const;
+const PLACEHOLDER_FADE_MS = 350;
 
-const SELECTED_TRACK_CARD_CLASS = cn(
-  TRACK_FIELD_BG_CLASS,
-  "relative flex h-[4.75rem] items-center gap-3 rounded-xl border border-border p-3 min-w-0 w-full overflow-hidden"
-);
+/** Solid grey surface — inline style avoids mosaic flicker from backdrop-blur. */
+const TRACK_FIELD_SURFACE_CLASS = cn("relative overflow-hidden", NEUTRAL_FIELD_SURFACE_CLASS);
 
-const TRACK_FIELD_HEIGHT_CLASS = "h-[4.75rem]";
+
+const SEARCH_DROPDOWN_CLASS =
+  "absolute top-full left-0 right-0 mt-2 z-[200] rounded-xl border border-border bg-[#0f0f14] shadow-2xl";
 
 export function TrackSearch({
   label,
@@ -50,8 +60,14 @@ export function TrackSearch({
   bpm = null,
   musicalKey = null,
   enableFavoritesFilter = false,
+  compact = false,
+  placeholder = "Search for a track...",
+  animatePlaceholder = false,
+  onOpenChange,
 }: TrackSearchProps) {
   const [query, setQuery] = useState("");
+  const [displayPlaceholder, setDisplayPlaceholder] = useState(placeholder);
+  const [placeholderFaded, setPlaceholderFaded] = useState(false);
   const [results, setResults] = useState<TrackResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -62,6 +78,23 @@ export function TrackSearch({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!animatePlaceholder) {
+      setDisplayPlaceholder(placeholder);
+      setPlaceholderFaded(false);
+      return;
+    }
+    if (placeholder === displayPlaceholder) return;
+
+    setPlaceholderFaded(true);
+    const swapTimer = window.setTimeout(() => {
+      setDisplayPlaceholder(placeholder);
+      setPlaceholderFaded(false);
+    }, PLACEHOLDER_FADE_MS);
+
+    return () => window.clearTimeout(swapTimer);
+  }, [animatePlaceholder, placeholder, displayPlaceholder]);
 
   const loadRecentTracks = useCallback(async () => {
     setIsFavorites(false);
@@ -167,6 +200,10 @@ export function TrackSearch({
   }, [query, results.length, loadRecentTracks, isFavorites]);
 
   useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
+
+  useEffect(() => {
     if (query.trim().length < 2) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => search(query), 350);
@@ -254,12 +291,30 @@ export function TrackSearch({
     },
   }[accentColor];
 
+  const fieldSurfaceClass = TRACK_FIELD_SURFACE_CLASS;
+  const fieldSurfaceStyle = NEUTRAL_SURFACE_STYLE;
+
+  const fieldHeightClass = "h-14";
+
+  const selectedTrackLayoutClass = cn(
+    "flex items-center rounded-xl border border-border min-w-0 w-full",
+    fieldHeightClass,
+    compact ? "px-2.5 py-2" : "px-3 py-2.5"
+  );
+
   return (
-    <div className="flex min-h-[6.5rem] flex-col gap-2 min-w-0 w-full" ref={containerRef}>
+    <div
+      className={cn(
+        "flex min-w-0 w-full flex-col",
+        compact ? "min-h-0 gap-1" : "min-h-[6.5rem] gap-2"
+      )}
+      ref={containerRef}
+    >
       {/* Label */}
       <span
         className={cn(
-          "text-sm font-semibold tracking-wide uppercase",
+          "inline-flex w-fit items-center rounded-md px-2 py-0.5",
+          "text-xs font-semibold tracking-wide uppercase",
           selectedTrack ? "text-muted-foreground" : accentStyles.label
         )}
       >
@@ -268,98 +323,117 @@ export function TrackSearch({
 
       {selectedTrack ? (
         /* Selected state */
-        <div className={SELECTED_TRACK_CARD_CLASS} style={TRACK_FIELD_BG_STYLE}>
-          <div className="relative z-10 flex items-center gap-3 min-w-0 w-full">
+        <div className={cn(fieldSurfaceClass, selectedTrackLayoutClass)} style={fieldSurfaceStyle}>
+          <div className="relative z-10 flex min-w-0 w-full items-center gap-3.5">
             {selectedTrack.image ? (
               <img
                 src={selectedTrack.image}
                 alt={`${selectedTrack.album} album art`}
-                className="size-10 rounded-md object-cover flex-shrink-0 ring-1 ring-white/10"
+                className="size-9 flex-shrink-0 rounded-md object-cover ring-1 ring-white/10"
               />
             ) : (
-              <div className="size-10 rounded-md bg-muted flex items-center justify-center flex-shrink-0 ring-1 ring-white/10">
+              <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-md bg-muted ring-1 ring-white/10">
                 <Music className="size-4 text-muted-foreground" />
               </div>
             )}
-            <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="min-w-0 flex-1 overflow-hidden py-0.5">
               <p
-                className="min-h-5 truncate text-sm font-semibold leading-5 text-foreground"
+                className="truncate text-sm font-semibold leading-snug text-foreground"
                 title={selectedTrack.name}
               >
                 {selectedTrack.name}
               </p>
               <p
-                className="min-h-4 truncate text-xs leading-4 text-muted-foreground"
+                className="truncate text-xs leading-snug text-muted-foreground"
                 title={selectedTrack.artist}
               >
                 {selectedTrack.artist}
               </p>
               <p
-                className="min-h-4 truncate text-xs leading-4 text-muted-foreground/70"
+                className="truncate text-xs leading-snug text-muted-foreground/70"
                 title={selectedTrack.album || undefined}
               >
                 {selectedTrack.album || "\u00A0"}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleFavoriteClick}
-              aria-label={favorited ? "Remove from favorites" : "Save to favorites"}
-              aria-pressed={favorited}
-              className={cn(
-                "flex-shrink-0 size-7 rounded-full flex items-center justify-center transition-colors",
-                favorited
-                  ? "text-rose-400 hover:text-rose-300 hover:bg-white/10"
-                  : "text-muted-foreground hover:text-rose-400 hover:bg-white/10"
-              )}
-            >
-              <Heart className={cn("size-4", favorited && "fill-current")} />
-            </button>
-            <button
-              onClick={onClear}
-              aria-label="Remove track"
-              className="flex-shrink-0 size-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
-            >
-              <X className="size-4" />
-            </button>
+            <div className="ml-1 flex flex-shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleFavoriteClick}
+                aria-label={favorited ? "Remove from favorites" : "Save to favorites"}
+                aria-pressed={favorited}
+                className={cn(
+                  "flex size-7 flex-shrink-0 items-center justify-center rounded-full transition-colors",
+                  favorited
+                    ? "text-rose-400 hover:bg-white/10 hover:text-rose-300"
+                    : "text-muted-foreground hover:bg-white/10 hover:text-rose-400"
+                )}
+              >
+                <Heart className={cn("size-4", favorited && "fill-current")} />
+              </button>
+              <button
+                onClick={onClear}
+                aria-label="Remove track"
+                className="flex size-7 flex-shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         /* Search input + dropdown */
-        <div className={cn("relative z-20", TRACK_FIELD_HEIGHT_CLASS)}>
+        <div className={cn("relative", open ? "z-[200]" : "z-20", fieldHeightClass)}>
           <div
             className={cn(
-              "flex h-full items-center rounded-xl border ring-2 ring-transparent transition-[border-color,box-shadow]",
-              TRACK_FIELD_BG_CLASS,
+              "relative flex h-full items-center rounded-xl border ring-2 ring-transparent transition-[border-color,box-shadow]",
+              fieldSurfaceClass,
               accentStyles.ring,
               accentStyles.border,
               "border-border"
             )}
-            style={TRACK_FIELD_BG_STYLE}
+            style={fieldSurfaceStyle}
           >
             {loading ? (
               <Loader2 className="ml-3 size-4 text-muted-foreground animate-spin flex-shrink-0" />
             ) : (
               <Search className="ml-3 size-4 text-muted-foreground flex-shrink-0" />
             )}
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                if (isFavorites) setIsFavorites(false);
-              }}
-              onKeyDown={handleKeyDown}
-              onFocus={handleFocus}
-              placeholder={`Search for a track...`}
-              className={cn(
-                "flex-1 bg-transparent px-3 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0",
-                enableFavoritesFilter ? "pr-1" : query ? "pr-1" : ""
+            <div className="relative min-w-0 flex-1">
+              {animatePlaceholder && !query && (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center truncate px-3 text-sm text-zinc-400/90 transition-opacity",
+                    placeholderFaded ? "opacity-0" : "opacity-100"
+                  )}
+                  style={{ transitionDuration: `${PLACEHOLDER_FADE_MS}ms` }}
+                >
+                  {displayPlaceholder}
+                </span>
               )}
-              aria-label={`Search for ${label}`}
-              aria-autocomplete="list"
-              aria-expanded={open}
-            />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  if (isFavorites) setIsFavorites(false);
+                }}
+                onKeyDown={handleKeyDown}
+                onFocus={handleFocus}
+                placeholder={animatePlaceholder ? "" : placeholder}
+                className={cn(
+                  "w-full bg-transparent px-3 py-2 text-sm text-foreground outline-none min-w-0",
+                  animatePlaceholder
+                    ? "placeholder:text-zinc-400/90"
+                    : "placeholder:text-muted-foreground/70",
+                  enableFavoritesFilter ? "pr-1" : query ? "pr-1" : ""
+                )}
+                aria-label={`Search for ${label}`}
+                aria-autocomplete="list"
+                aria-expanded={open}
+              />
+            </div>
             {query && (
               <button
                 type="button"
@@ -397,7 +471,7 @@ export function TrackSearch({
           {/* Dropdown */}
           {open && results.length > 0 && (
             <div
-              className="absolute top-full left-0 right-0 mt-2 z-[100] rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
+              className={cn(SEARCH_DROPDOWN_CLASS, "overflow-hidden")}
               role="listbox"
               aria-label={
                 isFavorites
@@ -466,13 +540,13 @@ export function TrackSearch({
           )}
 
           {open && isFavorites && results.length === 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 z-[100] rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
+            <div className={cn(SEARCH_DROPDOWN_CLASS, "p-6 text-center")}>
               <p className="text-sm text-muted-foreground">No favorites yet — heart a track to save it here.</p>
             </div>
           )}
 
           {open && query.length >= 2 && results.length === 0 && !loading && !isFavorites && (
-            <div className="absolute top-full left-0 right-0 mt-2 z-[100] rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
+            <div className={cn(SEARCH_DROPDOWN_CLASS, "p-6 text-center")}>
               <p className="text-sm text-muted-foreground">No tracks found for &ldquo;{query}&rdquo;</p>
             </div>
           )}

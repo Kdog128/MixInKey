@@ -33,15 +33,6 @@ export interface TracksCacheRow {
   cached_at: string | null;
 }
 
-function hasCacheableAnalysis(analysis: AudioAnalysis): boolean {
-  return (
-    analysis.bpm != null ||
-    analysis.camelot != null ||
-    analysis.musicalKey != null ||
-    analysis.genres.length > 0
-  );
-}
-
 function rowToAnalysis(row: TracksCacheRow): AudioAnalysis {
   const camelot =
     (row.camelot_label ? parseMusicalKeyString(row.camelot_label) : null) ??
@@ -66,6 +57,24 @@ function rowToAnalysis(row: TracksCacheRow): AudioAnalysis {
   };
 }
 
+/** BPM/key pipeline succeeded — safe to skip re-fetching external audio sources. */
+export function hasResolvedBpmKeyCache(
+  entry:
+    | Pick<AudioAnalysis, "bpm" | "musicalKey" | "camelot">
+    | Pick<TracksCacheRow, "bpm" | "musical_key" | "camelot_label">
+): boolean {
+  if ("musical_key" in entry) {
+    return (
+      entry.bpm != null || entry.musical_key != null || entry.camelot_label != null
+    );
+  }
+  return entry.bpm != null || entry.musicalKey != null || entry.camelot != null;
+}
+
+function hasCacheableAnalysis(analysis: AudioAnalysis): boolean {
+  return hasResolvedBpmKeyCache(analysis) || analysis.genres.length > 0;
+}
+
 export async function getCachedTrackAnalysis(
   spotifyId: string
 ): Promise<AudioAnalysis | null> {
@@ -86,7 +95,18 @@ export async function getCachedTrackAnalysis(
     if (!data) return null;
 
     const analysis = rowToAnalysis(data as TracksCacheRow);
-    console.log("[tracks-cache] Hit:", { spotifyId, bpm: analysis.bpm, key: analysis.musicalKey });
+    if (hasResolvedBpmKeyCache(analysis)) {
+      console.log("[tracks-cache] Hit:", {
+        spotifyId,
+        bpm: analysis.bpm,
+        key: analysis.musicalKey,
+      });
+    } else {
+      console.log("[tracks-cache] Partial hit (BPM/key unresolved):", {
+        spotifyId,
+        genres: analysis.genres.length,
+      });
+    }
     return analysis;
   } catch (err) {
     console.warn("[tracks-cache] Read error:", err);
@@ -127,11 +147,14 @@ export async function getCachedTrackRowsByIds(
   return result;
 }
 
-export async function getRecentCachedArtworkUrls(limit = 25): Promise<string[]> {
+export async function getRecentCachedArtworkUrls(limit = 72): Promise<string[]> {
   const supabase = createSupabaseServerClient();
-  if (!supabase) return [];
+  if (!supabase) {
+    console.warn("[tracks-cache] Artwork wall: Supabase client unavailable");
+    return [];
+  }
 
-  const cappedLimit = Math.min(Math.max(limit, 1), 30);
+  const cappedLimit = Math.min(Math.max(limit, 1), 72);
 
   try {
     const { data, error } = await supabase
@@ -140,7 +163,7 @@ export async function getRecentCachedArtworkUrls(limit = 25): Promise<string[]> 
       .not("artwork_url", "is", null)
       .neq("artwork_url", "")
       .order("cached_at", { ascending: false })
-      .limit(cappedLimit * 3);
+      .limit(500);
 
     if (error || !data) {
       console.warn("[tracks-cache] Artwork wall read failed:", error?.message);
@@ -149,15 +172,26 @@ export async function getRecentCachedArtworkUrls(limit = 25): Promise<string[]> 
 
     const seen = new Set<string>();
     const urls: string[] = [];
+    let rowsWithDuplicateArtwork = 0;
 
     for (const row of data as Pick<TracksCacheRow, "artwork_url">[]) {
       const url = row.artwork_url?.trim();
-      if (!url || seen.has(url)) continue;
-      if (!/^https?:\/\//i.test(url)) continue;
+      if (!url || !/^https?:\/\//i.test(url)) continue;
+      if (seen.has(url)) {
+        rowsWithDuplicateArtwork++;
+        continue;
+      }
       seen.add(url);
       urls.push(url);
       if (urls.length >= cappedLimit) break;
     }
+
+    console.log("[tracks-cache] Artwork wall Supabase result:", {
+      rowsFetched: data.length,
+      duplicateArtworkRowsSkipped: rowsWithDuplicateArtwork,
+      uniqueArtworkUrls: urls.length,
+      requestedLimit: cappedLimit,
+    });
 
     return urls;
   } catch (err) {
