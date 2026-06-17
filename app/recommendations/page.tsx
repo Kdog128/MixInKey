@@ -1,7 +1,6 @@
 "use client";
 
 import { Sparkles } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
 
 function PageBackground() {
   return (
@@ -31,7 +30,6 @@ function PageBackground() {
 
 export default function RecommendationsPage() {
   return (
-    <AppShell>
       <main className="min-h-screen font-sans">
         <PageBackground />
 
@@ -72,6 +70,5 @@ export default function RecommendationsPage() {
           </section>
         </div>
       </main>
-    </AppShell>
   );
 }

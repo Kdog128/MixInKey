@@ -1,7 +1,6 @@
 "use client";
 
 import { Clock } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
 
 function PageBackground() {
   return (
@@ -31,7 +30,6 @@ function PageBackground() {
 
 export default function HistoryPage() {
   return (
-    <AppShell>
       <main className="min-h-screen font-sans">
         <PageBackground />
 
@@ -68,6 +66,5 @@ export default function HistoryPage() {
           </section>
         </div>
       </main>
-    </AppShell>
   );
 }

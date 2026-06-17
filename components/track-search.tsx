@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Search, X, Music, Loader2, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { COHESIVE_SURFACE_CLASS } from "@/lib/ui-surfaces";
 import { isFavorite, toggleFavorite, getFavorites, enrichFavoritesWithImages } from "@/lib/favorites";
 
 export interface TrackResult {
@@ -31,10 +30,16 @@ interface TrackSearchProps {
   enableFavoritesFilter?: boolean;
 }
 
+/** Opaque surface — no backdrop-blur so the mosaic cannot bleed through or flicker. */
+const TRACK_FIELD_BG_CLASS = "bg-black/70";
+const TRACK_FIELD_BG_STYLE = { backgroundColor: "rgba(0, 0, 0, 0.7)" } as const;
+
 const SELECTED_TRACK_CARD_CLASS = cn(
-  COHESIVE_SURFACE_CLASS,
+  TRACK_FIELD_BG_CLASS,
   "relative flex h-[4.75rem] items-center gap-3 rounded-xl border border-border p-3 min-w-0 w-full overflow-hidden"
 );
+
+const TRACK_FIELD_HEIGHT_CLASS = "h-[4.75rem]";
 
 export function TrackSearch({
   label,
@@ -250,7 +255,7 @@ export function TrackSearch({
   }[accentColor];
 
   return (
-    <div className="flex flex-col gap-2 min-w-0 w-full" ref={containerRef}>
+    <div className="flex min-h-[6.5rem] flex-col gap-2 min-w-0 w-full" ref={containerRef}>
       {/* Label */}
       <span
         className={cn(
@@ -263,19 +268,7 @@ export function TrackSearch({
 
       {selectedTrack ? (
         /* Selected state */
-        <div className={SELECTED_TRACK_CARD_CLASS}>
-          {selectedTrack.image ? (
-            <>
-              <img
-                src={selectedTrack.image}
-                alt=""
-                aria-hidden="true"
-                className="absolute inset-0 h-full w-full object-cover blur-md opacity-25 scale-110"
-              />
-              <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
-            </>
-          ) : null}
-
+        <div className={SELECTED_TRACK_CARD_CLASS} style={TRACK_FIELD_BG_STYLE}>
           <div className="relative z-10 flex items-center gap-3 min-w-0 w-full">
             {selectedTrack.image ? (
               <img
@@ -333,14 +326,16 @@ export function TrackSearch({
         </div>
       ) : (
         /* Search input + dropdown */
-        <div className="relative">
+        <div className={cn("relative z-20", TRACK_FIELD_HEIGHT_CLASS)}>
           <div
             className={cn(
-              "flex items-center rounded-xl border bg-surface ring-2 ring-transparent transition-all",
+              "flex h-full items-center rounded-xl border ring-2 ring-transparent transition-[border-color,box-shadow]",
+              TRACK_FIELD_BG_CLASS,
               accentStyles.ring,
               accentStyles.border,
               "border-border"
             )}
+            style={TRACK_FIELD_BG_STYLE}
           >
             {loading ? (
               <Loader2 className="ml-3 size-4 text-muted-foreground animate-spin flex-shrink-0" />
@@ -402,7 +397,7 @@ export function TrackSearch({
           {/* Dropdown */}
           {open && results.length > 0 && (
             <div
-              className="absolute top-full left-0 right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
+              className="absolute top-full left-0 right-0 mt-2 z-[100] rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
               role="listbox"
               aria-label={
                 isFavorites
@@ -471,13 +466,13 @@ export function TrackSearch({
           )}
 
           {open && isFavorites && results.length === 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
+            <div className="absolute top-full left-0 right-0 mt-2 z-[100] rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
               <p className="text-sm text-muted-foreground">No favorites yet — heart a track to save it here.</p>
             </div>
           )}
 
           {open && query.length >= 2 && results.length === 0 && !loading && !isFavorites && (
-            <div className="absolute top-full left-0 right-0 mt-2 z-50 rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
+            <div className="absolute top-full left-0 right-0 mt-2 z-[100] rounded-xl border border-border bg-popover shadow-2xl p-6 text-center">
               <p className="text-sm text-muted-foreground">No tracks found for &ldquo;{query}&rdquo;</p>
             </div>
           )}

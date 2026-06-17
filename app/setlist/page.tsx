@@ -5,7 +5,6 @@ import { ListMusic, Loader2, Save, Disc3, FolderOpen, Trash2, FilePlus, ChevronD
 import { TrackSearch, type TrackResult } from "@/components/track-search";
 import { SetlistTrackList } from "@/components/setlist-track-list";
 import { EnergyArc } from "@/components/energy-arc";
-import { AppShell } from "@/components/app-shell";
 import {
   addTrackToSetlist,
   buildSetlistTrack,
@@ -437,7 +436,6 @@ export default function SetlistPage() {
   }
 
   return (
-    <AppShell>
     <main className="min-h-screen font-sans">
       <div
         className="fixed inset-0 pointer-events-none"
@@ -914,6 +912,5 @@ export default function SetlistPage() {
         </div>
       )}
     </main>
-    </AppShell>
   );
 }

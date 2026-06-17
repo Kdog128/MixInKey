@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Heart, Loader2, Music } from "lucide-react";
-import { AppShell } from "@/components/app-shell";
 import {
   enrichFavoritesWithImages,
   getFavorites,
@@ -115,7 +114,6 @@ export default function FavoritesPage() {
   }, []);
 
   return (
-    <AppShell>
       <main className="min-h-screen font-sans">
         <PageBackground />
 
@@ -172,6 +170,5 @@ export default function FavoritesPage() {
           </section>
         </div>
       </main>
-    </AppShell>
   );
 }

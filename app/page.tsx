@@ -4,10 +4,12 @@ import { useState, useCallback } from "react";
 import { Disc3, Loader2, ArrowLeftRight } from "lucide-react";
 import { TrackSearch, TrackResult } from "@/components/track-search";
 import { CompatibilityCard, TrackFeatures } from "@/components/compatibility-card";
-import { AppShell } from "@/components/app-shell";
 import { addTrackToSetlist, buildSetlistTrack } from "@/lib/setlist";
 import { COHESIVE_SURFACE_CLASS } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
+
+/** Geist sans — same stack as footer source badges and category labels. */
+const SOURCE_FOOTER_FONT_CLASS = "font-sans";
 
 function SourceBadge({
   children,
@@ -19,6 +21,7 @@ function SourceBadge({
   return (
     <span
       className={cn(
+        SOURCE_FOOTER_FONT_CLASS,
         "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none",
         className
       )}
@@ -30,7 +33,12 @@ function SourceBadge({
 
 function FooterCategory({ label }: { label: string }) {
   return (
-    <span className="text-[10px] font-medium uppercase tracking-widest text-white/40">
+    <span
+      className={cn(
+        SOURCE_FOOTER_FONT_CLASS,
+        "text-[10px] font-medium uppercase tracking-widest text-white/40"
+      )}
+    >
       {label}
     </span>
   );
@@ -191,7 +199,6 @@ export default function Home() {
     !trackA && !trackB && !hasResults && !analysis.loading && !analysis.error;
 
   return (
-    <AppShell>
     <main className="min-h-screen font-sans">
       {/* Subtle grid overlay */}
       <div
@@ -236,14 +243,14 @@ export default function Home() {
         <header className="mb-3 w-full">
           <div
             className={cn(
-              "inline-flex min-w-0 max-w-full items-center gap-2 rounded-2xl border border-[#a855f7]/60 px-4 py-2.5",
+              "inline-flex min-w-0 max-w-full items-center gap-1 rounded-2xl border border-[#a855f7]/60 px-4 py-2.5",
               COHESIVE_SURFACE_CLASS
             )}
             style={{
               boxShadow: "0 0 28px rgba(168,85,247,0.35)",
             }}
           >
-            <div className="flex size-10 flex-shrink-0 items-center justify-center">
+            <div className="-ml-1 flex size-10 flex-shrink-0 items-center justify-center">
               <Disc3 className="size-7" style={{ color: "#a855f7" }} aria-hidden="true" />
             </div>
             <h1 className="truncate text-xl font-bold tracking-tight text-foreground md:text-2xl">
@@ -256,12 +263,12 @@ export default function Home() {
         <section
           aria-label="Track selection"
           className={cn(
-            "rounded-2xl border border-border p-5 md:p-6 flex flex-col gap-5",
+            "relative z-20 flex h-[12.5rem] shrink-0 flex-col gap-5 rounded-2xl border border-border p-5 md:p-6",
             COHESIVE_SURFACE_CLASS
           )}
           style={{ boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}
         >
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] gap-4 items-start min-w-0">
+          <div className="grid shrink-0 grid-cols-1 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] gap-4 items-start min-w-0">
             <div className="min-w-0">
               <TrackSearch
                 label="Track 1"
@@ -312,6 +319,7 @@ export default function Home() {
             </div>
           </div>
 
+          <div className="flex min-h-4 shrink-0 items-center justify-center">
           {!trackA && !trackB && (
             <p className="empty-state-gradient-text text-center text-xs">
               Search two Spotify tracks to analyze BPM, key, and Camelot compatibility.
@@ -324,6 +332,7 @@ export default function Home() {
                 : "Now search for Track 1 to see the compatibility report"}
             </p>
           )}
+          </div>
         </section>
         </div>
 
@@ -402,6 +411,5 @@ export default function Home() {
         </div>
       </div>
     </main>
-    </AppShell>
   );
 }
