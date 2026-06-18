@@ -106,12 +106,8 @@ export default function FavoritesPage() {
 
   return (
     <main className="min-h-screen font-sans">
-      <div className={PAGE_CONTENT_CLASS}>
-        <PageHeader
-          icon="heart"
-          title="Favorites"
-          description="Tracks you've saved from search and compatibility analysis."
-        />
+      <div className={cn(PAGE_CONTENT_CLASS, "gap-4")}>
+        <PageHeader icon="heart" title="Favorites" />
 
         <section
           className={cn(PAGE_SECTION_CARD_CLASS, "flex flex-col overflow-hidden p-0")}

@@ -9,12 +9,8 @@ import { cn } from "@/lib/utils";
 export default function RecommendationsPage() {
   return (
     <main className="min-h-screen font-sans">
-      <div className={PAGE_CONTENT_CLASS}>
-        <PageHeader
-          icon="sparkles"
-          title="Recommendations"
-          description="AI-powered suggestions tailored to your sets and taste."
-        />
+      <div className={cn(PAGE_CONTENT_CLASS, "gap-4")}>
+        <PageHeader icon="sparkles" title="Recommendations" />
 
         <section
           className={cn(PAGE_SECTION_CARD_CLASS, "flex flex-col overflow-hidden p-0")}
