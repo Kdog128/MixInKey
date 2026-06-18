@@ -5,6 +5,7 @@ import { Heart, Loader2, Music } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import {
+  enrichFavoritesWithAnalysis,
   enrichFavoritesWithImages,
   getFavorites,
   type FavoriteTrack,
@@ -56,10 +57,10 @@ function FavoriteRow({ track }: { track: FavoriteTrack }) {
         <span
           className={cn(
             "w-16 text-center font-mono text-xs font-semibold",
-            track.key ? "text-foreground" : "text-muted-foreground"
+            track.camelot ? "text-foreground" : "text-muted-foreground"
           )}
         >
-          {track.key ?? "—"}
+          {track.camelot ?? "—"}
         </span>
       </div>
     </div>
@@ -73,8 +74,13 @@ export default function FavoritesPage() {
   useEffect(() => {
     let cancelled = false;
 
+    async function enrichAll(favorites: FavoriteTrack[]) {
+      const withImages = await enrichFavoritesWithImages(favorites);
+      return enrichFavoritesWithAnalysis(withImages);
+    }
+
     async function load() {
-      const enriched = await enrichFavoritesWithImages(getFavorites());
+      const enriched = await enrichAll(getFavorites());
       if (!cancelled) {
         setFavorites(enriched);
         setLoading(false);
@@ -84,7 +90,7 @@ export default function FavoritesPage() {
     void load();
 
     function syncFromStorage() {
-      void enrichFavoritesWithImages(getFavorites()).then((next) => {
+      void enrichAll(getFavorites()).then((next) => {
         if (!cancelled) setFavorites(next);
       });
     }
