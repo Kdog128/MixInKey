@@ -26,7 +26,7 @@ export function SetlistTrackListHeader() {
   return (
     <div
       className={cn(
-        "hidden text-[11px] font-semibold uppercase tracking-widest text-muted-foreground pb-3",
+        "hidden pt-2.5 pb-0 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground",
         SETLIST_TRACK_GRID_CLASS
       )}
     >
@@ -119,7 +119,7 @@ function TransitionBadge({ transition }: { transition: TransitionAnalysis }) {
 
 function TrackRowsBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(COHESIVE_INNER_CARD_CLASS, "mt-2.5")} style={cohesiveSurfaceStyle()}>
+    <div className={cn(COHESIVE_INNER_CARD_CLASS, "mt-1.5")} style={cohesiveSurfaceStyle()}>
       {children}
     </div>
   );
