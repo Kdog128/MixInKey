@@ -88,14 +88,14 @@ function SourceBadgeHoverGroup({
   children: React.ReactNode;
 }) {
   return (
-    <span
+    <div
       className="group/badge relative inline-flex items-center"
       tabIndex={0}
       aria-describedby={tooltipId}
     >
       {children}
       <SourceCategoryTooltip label={tooltipLabel} accent={accent} id={tooltipId} />
-    </span>
+    </div>
   );
 }
 
@@ -110,7 +110,7 @@ export function SourceBadgesFooter() {
       <p className="mb-2.5 text-center text-[10px] text-zinc-400/90">
         Next.js · Spotify API · Supabase
       </p>
-      <p className="flex min-h-[1.75rem] flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-center text-xs leading-normal">
+      <div className="flex min-h-[1.75rem] flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-center text-xs leading-normal">
         <span className="inline-flex items-center gap-2">
           <span className="text-zinc-400/90">Live APIs</span>
           <SourceBadgeHoverGroup tooltipLabel="Tracks" accent="green" tooltipId="source-tooltip-tracks">
@@ -131,7 +131,7 @@ export function SourceBadgesFooter() {
             <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.lastfm}>Last.fm</SourceBadge>
           </SourceBadgeHoverGroup>
         </span>
-      </p>
+      </div>
     </footer>
   );
 }

@@ -47,6 +47,11 @@ const EXAMPLE_ARTIST_POOL = [
 
 const PLACEHOLDER_ROTATE_MS = 7500;
 
+const DEFAULT_EXAMPLE_ARTIST_PAIR: [string, string] = [
+  EXAMPLE_ARTIST_POOL[0],
+  EXAMPLE_ARTIST_POOL[1],
+];
+
 function pickExampleArtistPair(exclude?: readonly [string, string]): [string, string] {
   const artists = EXAMPLE_ARTIST_POOL;
   for (let attempt = 0; attempt < 24; attempt++) {
@@ -93,8 +98,8 @@ export default function Home() {
   const [trackB, setTrackB] = useState<TrackResult | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisState>(emptyAnalysis);
   const [setlistMessage, setSetlistMessage] = useState<string | null>(null);
-  const [exampleArtistPair, setExampleArtistPair] = useState<[string, string]>(() =>
-    pickExampleArtistPair()
+  const [exampleArtistPair, setExampleArtistPair] = useState<[string, string]>(
+    DEFAULT_EXAMPLE_ARTIST_PAIR
   );
   const [openSearchSlot, setOpenSearchSlot] = useState<"A" | "B" | null>(null);
   const scrollAnchorYRef = useRef<number | null>(null);
