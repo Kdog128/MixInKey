@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { useDocumentVisible } from "@/lib/use-document-visible";
 
 interface ArtworkMosaicWallProps {
   active?: boolean;
@@ -355,6 +356,7 @@ export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWal
   /** Fresh random seed each mount so tile order is never memoized across page loads. */
   const [layoutSeed] = useState(() => Math.random());
   const cols = useMosaicGridCols();
+  const documentVisible = useDocumentVisible();
 
   useEffect(() => {
     if (!active) return;
@@ -418,7 +420,7 @@ export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWal
                 tileIndex={tileIndex}
                 initialUrlA={pair.urlA}
                 initialUrlB={pair.urlB}
-                canCycle={gridLayout.uniqueUrls.length > 1}
+                canCycle={gridLayout.uniqueUrls.length > 1 && documentVisible}
               />
             ))}
           </div>

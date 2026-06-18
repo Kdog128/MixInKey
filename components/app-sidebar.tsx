@@ -5,7 +5,22 @@ import { usePathname } from "next/navigation";
 import { MixInKeyLogo } from "@/components/mixinkey-logo";
 import { GradientFlowIcon } from "@/components/gradient-flow-icon";
 import type { GradientFlowIconName } from "@/lib/gradient-flow-masks";
+import { dispatchCompatibilityNavReset } from "@/lib/compatibility-nav-reset";
+import { normalizePathname, resolveNavPathname } from "@/lib/nav-active";
+import { COHESIVE_PANEL_CLASS } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
+
+/** Shared icon bubble — active nav items use the same purple ring + glow as page headers. */
+const NAV_ICON_WRAPPER_CLASS =
+  "flex size-9 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 ease-in-out";
+
+const NAV_ICON_ACTIVE_CLASS = cn(
+  "border-[#a855f7]/60 nav-icon-active-surface",
+  COHESIVE_PANEL_CLASS
+);
+
+const NAV_ICON_INACTIVE_CLASS =
+  "border-transparent bg-transparent group-hover/sidebar:group-hover/nav:border-[#a855f7]/20 group-hover/sidebar:group-hover/nav:bg-[#a855f7]/10";
 
 const navItems = [
   {
@@ -46,12 +61,6 @@ const labelRevealClass =
 const logoWordmarkRevealClass =
   "max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity] duration-300 ease-in-out group-hover/sidebar:max-w-[5.75rem] group-hover/sidebar:overflow-visible group-hover/sidebar:opacity-100";
 
-function normalizePathname(pathname: string): string {
-  const path = pathname.split("?")[0].split("#")[0];
-  if (path !== "/" && path.endsWith("/")) return path.slice(0, -1);
-  return path || "/";
-}
-
 function getActiveNavHref(pathname: string): string | null {
   const path = normalizePathname(pathname);
   let best: (typeof navItems)[number] | null = null;
@@ -66,8 +75,19 @@ function getActiveNavHref(pathname: string): string | null {
   return best?.href ?? null;
 }
 
-export function AppSidebar() {
-  const pathname = usePathname();
+function handleNavClick(href: string, pathname: string) {
+  if (href === "/" && normalizePathname(pathname) === "/") {
+    dispatchCompatibilityNavReset();
+  }
+}
+
+interface AppSidebarProps {
+  initialPathname: string;
+}
+
+export function AppSidebar({ initialPathname }: AppSidebarProps) {
+  const clientPathname = usePathname();
+  const pathname = resolveNavPathname(clientPathname, initialPathname);
   const activeHref = getActiveNavHref(pathname);
 
   return (
@@ -115,15 +135,22 @@ export function AppSidebar() {
                 href={href}
                 aria-current={active ? "page" : undefined}
                 title={label}
+                onClick={() => handleNavClick(href, pathname)}
                 className={cn(
-                  "flex w-full items-center rounded-lg border px-2.5 py-2.5 transition-colors duration-300 ease-in-out",
+                  "group/nav flex w-full items-center rounded-lg border border-transparent bg-transparent px-2.5 py-2.5 transition-colors duration-300 ease-in-out",
                   "justify-center gap-0 group-hover/sidebar:justify-start group-hover/sidebar:gap-3 group-hover/sidebar:px-3",
-                  active
-                    ? "border-[#a855f7]/35 bg-[#a855f7]/15"
-                    : "border-transparent bg-transparent group-hover/sidebar:hover:border-[#a855f7]/20 group-hover/sidebar:hover:bg-[#a855f7]/10"
+                  !active &&
+                    "group-hover/sidebar:group-hover/nav:bg-[#a855f7]/10"
                 )}
               >
-                <GradientFlowIcon name={icon} />
+                <span
+                  className={cn(
+                    NAV_ICON_WRAPPER_CLASS,
+                    active ? NAV_ICON_ACTIVE_CLASS : NAV_ICON_INACTIVE_CLASS
+                  )}
+                >
+                  <GradientFlowIcon name={icon} />
+                </span>
                 <span
                   className={cn(
                     "min-w-0 text-sm font-medium leading-none",

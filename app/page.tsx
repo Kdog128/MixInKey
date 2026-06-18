@@ -15,6 +15,8 @@ import {
   PAGE_SECTION_CARD_CLASS,
   cohesiveCardStyle,
 } from "@/lib/ui-surfaces";
+import { COMPATIBILITY_NAV_RESET_EVENT } from "@/lib/compatibility-nav-reset";
+import { useDocumentVisible } from "@/lib/use-document-visible";
 import { cn } from "@/lib/utils";
 
 const SEARCH_PANEL_HELPER_TEXT =
@@ -102,7 +104,19 @@ export default function Home() {
     DEFAULT_EXAMPLE_ARTIST_PAIR
   );
   const [openSearchSlot, setOpenSearchSlot] = useState<"A" | "B" | null>(null);
+  const [searchResetKey, setSearchResetKey] = useState(0);
   const scrollAnchorYRef = useRef<number | null>(null);
+  const documentVisible = useDocumentVisible();
+
+  const resetCompatibilityPage = useCallback(() => {
+    setTrackA(null);
+    setTrackB(null);
+    setAnalysis(emptyAnalysis);
+    setSetlistMessage(null);
+    setOpenSearchSlot(null);
+    setSearchResetKey((key) => key + 1);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
 
   const isSearchDropdownOpen = openSearchSlot !== null;
   const searchPanelDimClass = "opacity-25 transition-opacity duration-200";
@@ -119,14 +133,31 @@ export default function Home() {
   const bothTracksEmpty = !trackA && !trackB;
 
   useEffect(() => {
-    if (!bothTracksEmpty) return;
+    function handleCompatibilityNavReset() {
+      resetCompatibilityPage();
+    }
+
+    window.addEventListener(
+      COMPATIBILITY_NAV_RESET_EVENT,
+      handleCompatibilityNavReset
+    );
+    return () => {
+      window.removeEventListener(
+        COMPATIBILITY_NAV_RESET_EVENT,
+        handleCompatibilityNavReset
+      );
+    };
+  }, [resetCompatibilityPage]);
+
+  useEffect(() => {
+    if (!bothTracksEmpty || !documentVisible) return;
 
     const timer = window.setInterval(() => {
       setExampleArtistPair((current) => pickExampleArtistPair(current));
     }, PLACEHOLDER_ROTATE_MS);
 
     return () => window.clearInterval(timer);
-  }, [bothTracksEmpty]);
+  }, [bothTracksEmpty, documentVisible]);
 
   useLayoutEffect(() => {
     if (scrollAnchorYRef.current === null) return;
@@ -268,6 +299,7 @@ export default function Home() {
                     )}
                   >
                     <TrackSearch
+                      key={`track-a-${searchResetKey}`}
                       label="Track 1"
                       accentColor="purple"
                       placeholder={exampleArtistPair[0]}
@@ -278,6 +310,7 @@ export default function Home() {
                       bpm={analysis.featuresA?.bpm}
                       musicalKey={analysis.featuresA?.musical_key}
                       onOpenChange={handleTrackAOpenChange}
+                      enableFavoritesFilter
                     />
                   </div>
 
@@ -288,6 +321,7 @@ export default function Home() {
                     )}
                   >
                     <TrackSearch
+                      key={`track-b-${searchResetKey}`}
                       label="Track 2"
                       accentColor="blue"
                       placeholder={exampleArtistPair[1]}
@@ -298,6 +332,7 @@ export default function Home() {
                       bpm={analysis.featuresB?.bpm}
                       musicalKey={analysis.featuresB?.musical_key}
                       onOpenChange={handleTrackBOpenChange}
+                      enableFavoritesFilter
                     />
                   </div>
                 </div>

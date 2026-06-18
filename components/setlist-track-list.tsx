@@ -26,7 +26,7 @@ export function SetlistTrackListHeader() {
   return (
     <div
       className={cn(
-        "hidden text-[11px] font-semibold uppercase tracking-widest text-muted-foreground border-b border-border/50 pb-3",
+        "hidden text-[11px] font-semibold uppercase tracking-widest text-muted-foreground pb-3",
         SETLIST_TRACK_GRID_CLASS
       )}
     >
@@ -117,6 +117,14 @@ function TransitionBadge({ transition }: { transition: TransitionAnalysis }) {
   );
 }
 
+function TrackRowsBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={cn(COHESIVE_INNER_CARD_CLASS, "mt-2.5")} style={cohesiveSurfaceStyle()}>
+      {children}
+    </div>
+  );
+}
+
 export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackListProps) {
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
@@ -150,24 +158,32 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
 
   if (tracks.length === 0) {
     return (
-      <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-10 text-center")} style={cohesiveSurfaceStyle()}>
-        <p className="text-sm text-muted-foreground">No tracks yet — search above to build your set.</p>
-      </div>
+      <>
+        <SetlistTrackListHeader />
+        <TrackRowsBox>
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              No tracks yet — search above to build your set.
+            </p>
+          </div>
+        </TrackRowsBox>
+      </>
     );
   }
 
   return (
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex flex-col gap-2.5">
-        <SetlistTrackListHeader />
-        <Droppable droppableId="setlist">
-        {(provided) => (
-          <div
-            ref={provided.innerRef}
-            {...provided.droppableProps}
-            className="flex flex-col gap-2.5"
-          >
-            {tracks.map((track, index) => {
+    <>
+      <SetlistTrackListHeader />
+      <TrackRowsBox>
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId="setlist">
+            {(provided) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="flex flex-col gap-2.5 p-3 sm:p-4"
+              >
+                {tracks.map((track, index) => {
               const nextTrack = tracks[index + 1];
               const outgoingTransition = nextTrack
                 ? getTransitionAnalysis(track, nextTrack)
@@ -292,11 +308,12 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
                 </Draggable>
               );
             })}
-            {provided.placeholder}
-          </div>
-        )}
-        </Droppable>
-      </div>
-    </DragDropContext>
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
+      </TrackRowsBox>
+    </>
   );
 }

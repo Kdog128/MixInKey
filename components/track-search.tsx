@@ -204,6 +204,12 @@ export function TrackSearch({
   }, [open, onOpenChange]);
 
   useEffect(() => {
+    if (!open) {
+      setIsFavorites(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
     if (query.trim().length < 2) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => search(query), 350);
@@ -296,6 +302,8 @@ export function TrackSearch({
   const fieldSurfaceStyle = NEUTRAL_SURFACE_STYLE;
 
   const fieldHeightClass = "h-14";
+
+  const favoritesPickerActive = open && isFavorites;
 
   const selectedTrackLayoutClass = cn(
     "flex items-center rounded-xl border border-border min-w-0 w-full",
@@ -455,16 +463,16 @@ export function TrackSearch({
               <button
                 type="button"
                 onClick={handleToggleFavorites}
-                aria-label={isFavorites ? "Exit favorites filter" : "Show favorites"}
-                aria-pressed={isFavorites}
+                aria-label={favoritesPickerActive ? "Exit favorites filter" : "Show favorites"}
+                aria-pressed={favoritesPickerActive}
                 className={cn(
                   "mr-2 size-6 rounded-full flex items-center justify-center transition-colors flex-shrink-0",
-                  isFavorites
+                  favoritesPickerActive
                     ? "text-rose-400 hover:text-rose-300"
                     : "text-muted-foreground hover:text-rose-400"
                 )}
               >
-                <Heart className={cn("size-3.5", isFavorites && "fill-current")} />
+                <Heart className={cn("size-3.5", favoritesPickerActive && "fill-current")} />
               </button>
             )}
           </div>
@@ -492,7 +500,7 @@ export function TrackSearch({
                   Recently Played
                 </div>
               )}
-              <div className="max-h-72 overflow-y-auto">
+              <div className="scrollbar-hide max-h-72 overflow-y-auto">
                 {results.map((track, idx) => (
                   <button
                     key={track.id}

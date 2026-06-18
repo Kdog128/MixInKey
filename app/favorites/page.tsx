@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Heart, Loader2, Music } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import {
   enrichFavoritesWithImages,
   getFavorites,
@@ -106,7 +107,10 @@ export default function FavoritesPage() {
           description="Tracks you've saved from search and compatibility analysis."
         />
 
-        <section className={cn(PAGE_SECTION_CARD_CLASS, "overflow-hidden p-0")} style={cohesiveCardStyle()}>
+        <section
+          className={cn(PAGE_SECTION_CARD_CLASS, "flex flex-col overflow-hidden p-0")}
+          style={cohesiveCardStyle()}
+        >
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -131,6 +135,10 @@ export default function FavoritesPage() {
               ))}
             </div>
           )}
+
+          <div className="border-t border-border/50 px-4 py-3">
+            <SourceBadgesFooter />
+          </div>
         </section>
       </div>
     </main>

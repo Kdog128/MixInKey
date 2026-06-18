@@ -8,10 +8,14 @@ import {
 } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
 
+/** Matches Compatibility page title pill — icon and title in one bordered/glowing container. */
+const PAGE_TITLE_PILL_CLASS =
+  "inline-flex w-fit min-w-0 max-w-full items-center rounded-2xl border border-[#a855f7]/60 px-4 py-2.5";
+
 interface PageHeaderProps {
   icon: GradientFlowIconName;
   title: string;
-  description: string;
+  description?: string;
   titleExtra?: ReactNode;
   className?: string;
 }
@@ -24,28 +28,27 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <header className={cn("flex items-start gap-4", className)}>
-      <div
-        className={cn(
-          "flex size-14 flex-shrink-0 items-center justify-center rounded-2xl border border-[#a855f7]/60",
-          COHESIVE_PANEL_CLASS
-        )}
-        style={{
-          ...COHESIVE_SURFACE_STYLE,
-          ...COHESIVE_TITLE_SHADOW,
-        }}
-      >
-        <GradientFlowIcon name={icon} className="size-7" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="gradient-flow-text truncate text-3xl font-bold tracking-tight md:text-4xl">
+    <header className={cn("flex flex-col items-start gap-1", className)}>
+      <div className="flex min-w-0 max-w-full items-center gap-2">
+        <div
+          className={cn(PAGE_TITLE_PILL_CLASS, COHESIVE_PANEL_CLASS)}
+          style={{
+            ...COHESIVE_SURFACE_STYLE,
+            ...COHESIVE_TITLE_SHADOW,
+          }}
+        >
+          <div className="-ml-0.5 flex size-10 flex-shrink-0 items-center justify-center">
+            <GradientFlowIcon name={icon} className="size-6" />
+          </div>
+          <h1 className="gradient-flow-text ml-0.5 truncate text-xl font-bold tracking-tight md:text-2xl">
             {title}
           </h1>
-          {titleExtra}
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        {titleExtra}
       </div>
+      {description ? (
+        <p className="text-sm text-muted-foreground">{description}</p>
+      ) : null}
     </header>
   );
 }

@@ -158,6 +158,16 @@
   background: rgba(148, 163, 184, 0.55);
 }
 
+/** Scrollable areas with hidden scrollbar track/thumb (scroll still works). */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes save-success-enter {
   from {
     opacity: 0;
@@ -274,4 +284,16 @@
 
 .cohesive-surface {
   background-color: rgba(9, 9, 11, 0.8);
+}
+
+/** Active sidebar nav icon bubble — matches COHESIVE_SURFACE_STYLE + COHESIVE_TITLE_SHADOW. */
+.nav-icon-active-surface {
+  background-color: rgba(0, 0, 0, 0.7);
+  background-image: linear-gradient(
+    135deg,
+    rgba(168, 85, 247, 0.18) 0%,
+    rgba(59, 130, 246, 0.08) 50%,
+    rgba(168, 85, 247, 0.12) 100%
+  );
+  box-shadow: 0 0 28px rgba(168, 85, 247, 0.35);
 }

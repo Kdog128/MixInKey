@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Save, Disc3, FolderOpen, Trash2, FilePlus, ChevronDown, CheckCircle2, Pencil } from "lucide-react";
+import { Loader2, Save, Disc3, FolderOpen, Trash2, FilePlus, ChevronDown, CheckCircle2, Pencil, ListMusic } from "lucide-react";
 import { TrackSearch, type TrackResult } from "@/components/track-search";
 import { SetlistTrackList } from "@/components/setlist-track-list";
 import { EnergyArc } from "@/components/energy-arc";
 import { PageHeader } from "@/components/page-header";
+import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import {
   addTrackToSetlist,
   buildSetlistTrack,
@@ -451,12 +452,11 @@ export default function SetlistPage() {
 
   return (
     <main className="min-h-screen font-sans">
-      <div className={PAGE_CONTENT_CLASS}>
-        <header className="flex flex-col gap-4">
+      <div className={cn(PAGE_CONTENT_CLASS, "gap-4")}>
+        <header className="flex flex-col gap-2">
           <PageHeader
             icon="list-music"
             title={pageTitle}
-            description="Build and reorder your DJ set — drag tracks to plan your flow."
             titleExtra={
               hasNamedSet ? (
                 <button
@@ -464,7 +464,7 @@ export default function SetlistPage() {
                   onClick={handleRenameClick}
                   aria-label="Rename setlist"
                   className={cn(
-                    "ml-2 inline-flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:border-[#a855f7]/40 hover:bg-[#a855f7]/10 hover:text-[#c084fc]",
+                    "inline-flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:border-[#a855f7]/40 hover:bg-[#a855f7]/10 hover:text-[#c084fc]",
                     COHESIVE_CONTROL_SURFACE_CLASS
                   )}
                   style={cohesiveSurfaceStyle()}
@@ -633,8 +633,14 @@ export default function SetlistPage() {
           </div>
         </header>
 
-        <section className={PAGE_SECTION_CARD_CLASS} style={cohesiveCardStyle()}>
-          <div className="relative">
+        <section
+          className={cn(
+            PAGE_SECTION_CARD_CLASS,
+            "relative z-20 overflow-visible"
+          )}
+          style={cohesiveCardStyle()}
+        >
+          <div className="relative overflow-visible">
             <TrackSearch
               key={searchKey}
               label="Add Track"
@@ -660,18 +666,30 @@ export default function SetlistPage() {
         </section>
 
         <section
-          className={cn(PAGE_SECTION_CARD_CLASS, "flex flex-col gap-4")}
+          className={cn(PAGE_SECTION_CARD_CLASS, "flex flex-col overflow-hidden p-0")}
           style={cohesiveCardStyle()}
         >
-          <h2 className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
-            Track List
-          </h2>
+          <div className="flex min-w-0 items-center gap-2.5 border-b border-border/50 px-5 pt-5 pr-10 pb-3 md:px-6 md:pt-6">
+            <ListMusic className="size-5 flex-shrink-0 text-[#a855f7]" />
+            <h3 className="truncate text-sm font-semibold tracking-wide text-foreground">
+              Track List
+            </h3>
+            <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:inline">
+              Reorder, favorite, or remove tracks
+            </span>
+          </div>
 
-          <SetlistTrackList
-            tracks={tracks}
-            onReorder={handleReorder}
-            onRemove={handleRemove}
-          />
+          <div className="px-5 pb-4 md:px-6">
+            <SetlistTrackList
+              tracks={tracks}
+              onReorder={handleReorder}
+              onRemove={handleRemove}
+            />
+          </div>
+
+          <div className="px-4 pb-3 pt-1">
+            <SourceBadgesFooter />
+          </div>
         </section>
 
         {message && (
