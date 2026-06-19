@@ -38,11 +38,14 @@ interface TrackSearchProps {
   placeholder?: string;
   /** Crossfade placeholder text when the placeholder value changes (main page). */
   animatePlaceholder?: boolean;
+  /** Rotating title + artist hint with crossfade (Set Planner Add Track). */
+  animatedPlaceholderExample?: { title: string; artist: string };
   /** Notifies parent when the results dropdown opens or closes. */
   onOpenChange?: (isOpen: boolean) => void;
 }
 
 const PLACEHOLDER_FADE_MS = 350;
+const PLACEHOLDER_TRACK_SEPARATOR = " - ";
 
 /** Solid grey surface — inline style avoids mosaic flicker from backdrop-blur. */
 const TRACK_FIELD_SURFACE_CLASS = cn("relative overflow-hidden", NEUTRAL_FIELD_SURFACE_CLASS);
@@ -63,10 +66,14 @@ export function TrackSearch({
   compact = false,
   placeholder = "Search for a track...",
   animatePlaceholder = false,
+  animatedPlaceholderExample,
   onOpenChange,
 }: TrackSearchProps) {
   const [query, setQuery] = useState("");
   const [displayPlaceholder, setDisplayPlaceholder] = useState(placeholder);
+  const [displayPlaceholderExample, setDisplayPlaceholderExample] = useState(
+    animatedPlaceholderExample ?? { title: "", artist: "" }
+  );
   const [placeholderFaded, setPlaceholderFaded] = useState(false);
   const [results, setResults] = useState<TrackResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,23 +85,61 @@ export function TrackSearch({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const displayedPlaceholderRef = useRef(placeholder);
+  const displayedExampleRef = useRef(
+    animatedPlaceholderExample ?? { title: "", artist: "" }
+  );
+  const exampleTitle = animatedPlaceholderExample?.title ?? "";
+  const exampleArtist = animatedPlaceholderExample?.artist ?? "";
+  const hasAnimatedExample = Boolean(animatedPlaceholderExample);
 
   useEffect(() => {
     if (!animatePlaceholder) {
       setDisplayPlaceholder(placeholder);
+      displayedPlaceholderRef.current = placeholder;
+      if (hasAnimatedExample) {
+        const next = { title: exampleTitle, artist: exampleArtist };
+        setDisplayPlaceholderExample(next);
+        displayedExampleRef.current = next;
+      }
       setPlaceholderFaded(false);
       return;
     }
-    if (placeholder === displayPlaceholder) return;
+
+    if (hasAnimatedExample) {
+      const current = displayedExampleRef.current;
+      if (current.title === exampleTitle && current.artist === exampleArtist) {
+        return;
+      }
+
+      setPlaceholderFaded(true);
+      const swapTimer = window.setTimeout(() => {
+        const next = { title: exampleTitle, artist: exampleArtist };
+        setDisplayPlaceholderExample(next);
+        displayedExampleRef.current = next;
+        setPlaceholderFaded(false);
+      }, PLACEHOLDER_FADE_MS);
+
+      return () => window.clearTimeout(swapTimer);
+    }
+
+    if (placeholder === displayedPlaceholderRef.current) return;
 
     setPlaceholderFaded(true);
     const swapTimer = window.setTimeout(() => {
       setDisplayPlaceholder(placeholder);
+      displayedPlaceholderRef.current = placeholder;
       setPlaceholderFaded(false);
     }, PLACEHOLDER_FADE_MS);
 
     return () => window.clearTimeout(swapTimer);
-  }, [animatePlaceholder, placeholder, displayPlaceholder]);
+  }, [
+    animatePlaceholder,
+    placeholder,
+    exampleTitle,
+    exampleArtist,
+    hasAnimatedExample,
+  ]);
 
   const loadRecentTracks = useCallback(async () => {
     setIsFavorites(false);
@@ -418,7 +463,19 @@ export function TrackSearch({
                   )}
                   style={{ transitionDuration: `${PLACEHOLDER_FADE_MS}ms` }}
                 >
-                  {displayPlaceholder}
+                  {animatedPlaceholderExample ? (
+                    <span className="min-w-0 truncate">
+                      <span className="font-medium">
+                        {displayPlaceholderExample.title}
+                      </span>
+                      {PLACEHOLDER_TRACK_SEPARATOR}
+                      <span className="font-normal">
+                        {displayPlaceholderExample.artist}
+                      </span>
+                    </span>
+                  ) : (
+                    displayPlaceholder
+                  )}
                 </span>
               )}
               <input

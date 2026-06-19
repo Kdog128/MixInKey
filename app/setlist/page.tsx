@@ -21,6 +21,11 @@ import {
 } from "@/lib/setlist";
 import type { TrackFeatures } from "@/components/compatibility-card";
 import {
+  pickExampleTrack,
+  type ExampleTrackPlaceholder,
+} from "@/lib/example-track-placeholders";
+import { PLACEHOLDER_ROTATE_MS } from "@/lib/example-artist-placeholders";
+import {
   COHESIVE_CARD_CLASS,
   COHESIVE_CONTROL_SURFACE_CLASS,
   COHESIVE_ENERGY_SHADOW,
@@ -30,6 +35,7 @@ import {
   cohesiveCardStyle,
   cohesiveSurfaceStyle,
 } from "@/lib/ui-surfaces";
+import { useDocumentVisible } from "@/lib/use-document-visible";
 import { cn } from "@/lib/utils";
 
 async function fetchTrackFeatures(track: TrackResult): Promise<Pick<TrackFeatures, "bpm" | "musical_key" | "camelot">> {
@@ -98,6 +104,20 @@ export default function SetlistPage() {
   const savedSetsRef = useRef<HTMLDivElement>(null);
   const saveNameInputRef = useRef<HTMLInputElement>(null);
   const renameNameInputRef = useRef<HTMLInputElement>(null);
+  const [exampleTrack, setExampleTrack] = useState<ExampleTrackPlaceholder>(() =>
+    pickExampleTrack()
+  );
+  const documentVisible = useDocumentVisible();
+
+  useEffect(() => {
+    if (!documentVisible) return;
+
+    const timer = window.setInterval(() => {
+      setExampleTrack((current) => pickExampleTrack(current));
+    }, PLACEHOLDER_ROTATE_MS);
+
+    return () => window.clearInterval(timer);
+  }, [documentVisible]);
 
   const loadSavedSetlists = useCallback(async () => {
     setLoadingSaved(true);
@@ -645,6 +665,8 @@ export default function SetlistPage() {
               key={searchKey}
               label="Add Track"
               accentColor="purple"
+              animatePlaceholder
+              animatedPlaceholderExample={exampleTrack}
               selectedTrack={null}
               onSelect={handleAddTrack}
               onClear={() => {}}

@@ -16,58 +16,16 @@ import {
   cohesiveCardStyle,
 } from "@/lib/ui-surfaces";
 import { COMPATIBILITY_NAV_RESET_EVENT } from "@/lib/compatibility-nav-reset";
+import {
+  DEFAULT_EXAMPLE_ARTIST_PAIR,
+  PLACEHOLDER_ROTATE_MS,
+  pickExampleArtistPair,
+} from "@/lib/example-artist-placeholders";
 import { useDocumentVisible } from "@/lib/use-document-visible";
 import { cn } from "@/lib/utils";
 
 const SEARCH_PANEL_HELPER_TEXT =
   "Search two Spotify tracks to analyze BPM, key, and Camelot compatibility.";
-
-const EXAMPLE_ARTIST_POOL = [
-  "Calvin Harris",
-  "Zedd",
-  "Skrillex",
-  "Prospa",
-  "Kettama",
-  "RÜFÜS DU SOL",
-  "Adam Port",
-  "Dom Dolla",
-  "John Summit",
-  "David Guetta",
-  "Sonny Fodera",
-  "FISHER",
-  "Anyma",
-  "Tiësto",
-  "Fred Again..",
-  "DJ Snake",
-  "Alesso",
-  "Mau P",
-  "Chris Stussy",
-  "Silva Bumpa",
-  "Chris Lake",
-  "Peggy Gou",
-] as const;
-
-const PLACEHOLDER_ROTATE_MS = 7500;
-
-const DEFAULT_EXAMPLE_ARTIST_PAIR: [string, string] = [
-  EXAMPLE_ARTIST_POOL[0],
-  EXAMPLE_ARTIST_POOL[1],
-];
-
-function pickExampleArtistPair(exclude?: readonly [string, string]): [string, string] {
-  const artists = EXAMPLE_ARTIST_POOL;
-  for (let attempt = 0; attempt < 24; attempt++) {
-    const firstIndex = Math.floor(Math.random() * artists.length);
-    let secondIndex = Math.floor(Math.random() * artists.length);
-    if (secondIndex === firstIndex) {
-      secondIndex = (secondIndex + 1) % artists.length;
-    }
-    const pair: [string, string] = [artists[firstIndex], artists[secondIndex]];
-    if (exclude && pair[0] === exclude[0] && pair[1] === exclude[1]) continue;
-    return pair;
-  }
-  return [artists[0], artists[1]];
-}
 
 /** Search inputs area inside the unified search card. */
 const SEARCH_PANEL_BODY_CLASS =
