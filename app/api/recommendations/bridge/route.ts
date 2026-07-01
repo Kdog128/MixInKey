@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchTrackAudioAnalysis } from "@/lib/audio-analysis";
 import {
   getKeyCompatibility,
   parseMusicalKeyString,
@@ -7,10 +6,12 @@ import {
   type KeyCompatibility,
 } from "@/lib/camelot";
 import { fetchLastFmSimilarTracks } from "@/lib/lastfm";
+import { fetchReccoBeatsBySpotifyIds } from "@/lib/reccobeats";
 import { getSpotifyToken } from "@/lib/spotify-auth";
+import { fetchSoundNetAnalysis } from "@/lib/soundnet";
 import { mapSpotifyTrack, type SpotifyApiTrack } from "@/lib/spotify-track";
 import { resolveTrackMetadataByIds } from "@/lib/track-metadata";
-import { getCachedTrackAnalysis } from "@/lib/tracks-cache";
+import { getCachedTrackAnalysis, getCachedTracksAnalysis } from "@/lib/tracks-cache";
 
 interface BridgeInputTrack {
   spotify_id: string;
@@ -34,6 +35,60 @@ interface ScoredBridge extends BridgeTrackResult {
 }
 
 const MIN_BRIDGE_POPULARITY = 40;
+const MAX_PARALLEL_ANALYSIS = 5;
+const CANDIDATE_LOOKUP_TIMEOUT_MS = 3000;
+
+interface BridgeCandidateAnalysis {
+  bpm: number | null;
+  camelot: CamelotKey | null;
+}
+
+function hasBridgeKeyData(analysis: BridgeCandidateAnalysis): boolean {
+  return analysis.camelot != null || analysis.bpm != null;
+}
+
+async function lookupBridgeCandidateFromExternal(
+  spotifyId: string
+): Promise<BridgeCandidateAnalysis> {
+  const reccoMap = await fetchReccoBeatsBySpotifyIds([spotifyId]);
+  const recco = reccoMap.get(spotifyId)?.analysis;
+  if (recco && hasBridgeKeyData(recco)) {
+    return { bpm: recco.bpm, camelot: recco.camelot };
+  }
+
+  const soundnet = await fetchSoundNetAnalysis(spotifyId);
+  if (hasBridgeKeyData(soundnet)) {
+    return { bpm: soundnet.bpm, camelot: soundnet.camelot };
+  }
+
+  return { bpm: null, camelot: null };
+}
+
+async function resolveBridgeCandidateAnalysis(
+  spotifyId: string
+): Promise<BridgeCandidateAnalysis> {
+  const cached = await getCachedTrackAnalysis(spotifyId);
+  if (cached && hasBridgeKeyData(cached)) {
+    return { bpm: cached.bpm, camelot: cached.camelot };
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timed = Promise.race([
+    lookupBridgeCandidateFromExternal(spotifyId),
+    new Promise<BridgeCandidateAnalysis>((resolve) => {
+      timeoutId = setTimeout(
+        () => resolve({ bpm: null, camelot: null }),
+        CANDIDATE_LOOKUP_TIMEOUT_MS
+      );
+    }),
+  ]);
+
+  try {
+    return await timed;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 function parseInputTrack(
   raw: unknown,
@@ -67,29 +122,81 @@ function isCompatibleWithBoth(
   };
 }
 
-async function resolveCandidateAnalysis(
-  spotifyId: string,
-  metadata: {
-    artist: string;
-    title: string;
-    duration_ms?: number;
-    artwork_url?: string | null;
-  }
-): Promise<{ bpm: number | null; camelot: CamelotKey | null }> {
-  const cached = await getCachedTrackAnalysis(spotifyId);
-  if (cached && (cached.camelot != null || cached.bpm != null)) {
-    return { bpm: cached.bpm, camelot: cached.camelot };
+async function evaluateSpotifyCandidates(
+  candidates: SpotifyApiTrack[],
+  track1Key: CamelotKey,
+  track2Key: CamelotKey,
+  excludeIds: Set<string>
+): Promise<ScoredBridge[]> {
+  const eligible = candidates.filter((raw) => raw?.id && !excludeIds.has(raw.id));
+  if (eligible.length === 0) return [];
+
+  const cacheMap = await getCachedTracksAnalysis(eligible.map((track) => track.id));
+  const passing: ScoredBridge[] = [];
+  const needsAnalysis: Array<{
+    raw: SpotifyApiTrack;
+    mapped: ReturnType<typeof mapSpotifyTrack>;
+  }> = [];
+
+  for (const raw of eligible) {
+    const mapped = mapSpotifyTrack(raw);
+    const cached = cacheMap.get(raw.id);
+    const cachedCamelot = cached?.camelot ?? null;
+
+    if (cachedCamelot) {
+      const { pass, compat1, compat2 } = isCompatibleWithBoth(
+        cachedCamelot,
+        track1Key,
+        track2Key
+      );
+      if (!pass) continue;
+
+      passing.push({
+        spotify_id: raw.id,
+        name: mapped.name,
+        artist: mapped.artist,
+        image: mapped.image,
+        bpm: cached?.bpm ?? null,
+        camelot: cachedCamelot.label,
+        compatWithTrack1: compat1,
+        compatWithTrack2: compat2,
+        sortScore: compat1.score + compat2.score,
+      });
+      continue;
+    }
+
+    needsAnalysis.push({ raw, mapped });
   }
 
-  const analysis = await fetchTrackAudioAnalysis({
-    spotify_id: spotifyId,
-    artist: metadata.artist,
-    title: metadata.title,
-    duration_ms: metadata.duration_ms,
-    artwork_url: metadata.artwork_url,
-  });
+  const toAnalyze = needsAnalysis.slice(0, MAX_PARALLEL_ANALYSIS);
+  const analyzed = await Promise.all(
+    toAnalyze.map(async ({ raw, mapped }) => {
+      const analysis = await resolveBridgeCandidateAnalysis(raw.id);
 
-  return { bpm: analysis.bpm, camelot: analysis.camelot };
+      return { raw, mapped, bpm: analysis.bpm, camelot: analysis.camelot };
+    })
+  );
+
+  for (const { raw, mapped, bpm, camelot } of analyzed) {
+    if (!camelot) continue;
+
+    const { pass, compat1, compat2 } = isCompatibleWithBoth(camelot, track1Key, track2Key);
+    if (!pass) continue;
+
+    passing.push({
+      spotify_id: raw.id,
+      name: mapped.name,
+      artist: mapped.artist,
+      image: mapped.image,
+      bpm,
+      camelot: camelot.label,
+      compatWithTrack1: compat1,
+      compatWithTrack2: compat2,
+      sortScore: compat1.score + compat2.score,
+    });
+  }
+
+  return passing;
 }
 
 async function fetchSpotifyRecommendations(
@@ -132,48 +239,6 @@ async function searchSpotifyTrack(
 
   const data = (await res.json()) as { tracks?: { items?: SpotifyApiTrack[] } };
   return data.tracks?.items?.[0] ?? null;
-}
-
-async function evaluateSpotifyCandidates(
-  candidates: SpotifyApiTrack[],
-  track1Key: CamelotKey,
-  track2Key: CamelotKey,
-  excludeIds: Set<string>
-): Promise<ScoredBridge[]> {
-  const passing: ScoredBridge[] = [];
-
-  await Promise.all(
-    candidates.map(async (raw) => {
-      if (!raw?.id || excludeIds.has(raw.id)) return;
-
-      const mapped = mapSpotifyTrack(raw);
-      const { bpm, camelot } = await resolveCandidateAnalysis(raw.id, {
-        artist: mapped.artist,
-        title: mapped.name,
-        duration_ms: mapped.duration_ms,
-        artwork_url: mapped.image,
-      });
-
-      if (!camelot) return;
-
-      const { pass, compat1, compat2 } = isCompatibleWithBoth(camelot, track1Key, track2Key);
-      if (!pass) return;
-
-      passing.push({
-        spotify_id: raw.id,
-        name: mapped.name,
-        artist: mapped.artist,
-        image: mapped.image,
-        bpm,
-        camelot: camelot.label,
-        compatWithTrack1: compat1,
-        compatWithTrack2: compat2,
-        sortScore: compat1.score + compat2.score,
-      });
-    })
-  );
-
-  return passing;
 }
 
 function topBridges(candidates: ScoredBridge[]): BridgeTrackResult[] {
