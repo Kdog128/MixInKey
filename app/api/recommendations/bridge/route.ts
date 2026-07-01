@@ -33,6 +33,8 @@ interface ScoredBridge extends BridgeTrackResult {
   sortScore: number;
 }
 
+const MIN_BRIDGE_POPULARITY = 40;
+
 function parseInputTrack(
   raw: unknown,
   label: "track1" | "track2"
@@ -211,8 +213,12 @@ export async function POST(request: NextRequest) {
       headers
     );
 
+    const popularSpotifyCandidates = spotifyCandidates.filter(
+      (track) => (track.popularity ?? 0) >= MIN_BRIDGE_POPULARITY
+    );
+
     let passing = await evaluateSpotifyCandidates(
-      spotifyCandidates,
+      popularSpotifyCandidates,
       track1Key,
       track2Key,
       excludeIds
