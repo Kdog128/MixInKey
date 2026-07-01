@@ -34,9 +34,9 @@ interface ScoredBridge extends BridgeTrackResult {
   sortScore: number;
 }
 
-const MIN_BRIDGE_POPULARITY = 40;
-const MAX_PARALLEL_ANALYSIS = 5;
-const CANDIDATE_LOOKUP_TIMEOUT_MS = 3000;
+const MIN_BRIDGE_POPULARITY = 25;
+const MAX_PARALLEL_ANALYSIS = 2;
+const CANDIDATE_LOOKUP_TIMEOUT_MS = 6000;
 
 interface BridgeCandidateAnalysis {
   bpm: number | null;
@@ -108,13 +108,20 @@ function parseInputTrack(
   return { spotify_id: spotifyId, camelot, bpm };
 }
 
+function isNonIncompatibleWithTrack(
+  candidateKey: CamelotKey,
+  trackKey: CamelotKey
+): KeyCompatibility {
+  return getKeyCompatibility(candidateKey, trackKey);
+}
+
 function isCompatibleWithBoth(
   candidateKey: CamelotKey,
   track1Key: CamelotKey,
   track2Key: CamelotKey
 ): { pass: boolean; compat1: KeyCompatibility; compat2: KeyCompatibility } {
-  const compat1 = getKeyCompatibility(candidateKey, track1Key);
-  const compat2 = getKeyCompatibility(candidateKey, track2Key);
+  const compat1 = isNonIncompatibleWithTrack(candidateKey, track1Key);
+  const compat2 = isNonIncompatibleWithTrack(candidateKey, track2Key);
   return {
     pass: compat1.type !== "incompatible" && compat2.type !== "incompatible",
     compat1,
@@ -122,17 +129,44 @@ function isCompatibleWithBoth(
   };
 }
 
-async function evaluateSpotifyCandidates(
-  candidates: SpotifyApiTrack[],
+interface ResolvedCandidate {
+  spotify_id: string;
+  name: string;
+  artist: string;
+  image: string | null;
+  bpm: number | null;
+  camelot: CamelotKey;
+}
+
+function toBridgeTrackResult(
+  candidate: ResolvedCandidate,
   track1Key: CamelotKey,
-  track2Key: CamelotKey,
+  track2Key: CamelotKey
+): BridgeTrackResult {
+  const compatWithTrack1 = isNonIncompatibleWithTrack(candidate.camelot, track1Key);
+  const compatWithTrack2 = isNonIncompatibleWithTrack(candidate.camelot, track2Key);
+
+  return {
+    spotify_id: candidate.spotify_id,
+    name: candidate.name,
+    artist: candidate.artist,
+    image: candidate.image,
+    bpm: candidate.bpm,
+    camelot: candidate.camelot.label,
+    compatWithTrack1,
+    compatWithTrack2,
+  };
+}
+
+async function resolveSpotifyCandidates(
+  candidates: SpotifyApiTrack[],
   excludeIds: Set<string>
-): Promise<ScoredBridge[]> {
+): Promise<ResolvedCandidate[]> {
   const eligible = candidates.filter((raw) => raw?.id && !excludeIds.has(raw.id));
   if (eligible.length === 0) return [];
 
   const cacheMap = await getCachedTracksAnalysis(eligible.map((track) => track.id));
-  const passing: ScoredBridge[] = [];
+  const resolved: ResolvedCandidate[] = [];
   const needsAnalysis: Array<{
     raw: SpotifyApiTrack;
     mapped: ReturnType<typeof mapSpotifyTrack>;
@@ -144,23 +178,13 @@ async function evaluateSpotifyCandidates(
     const cachedCamelot = cached?.camelot ?? null;
 
     if (cachedCamelot) {
-      const { pass, compat1, compat2 } = isCompatibleWithBoth(
-        cachedCamelot,
-        track1Key,
-        track2Key
-      );
-      if (!pass) continue;
-
-      passing.push({
+      resolved.push({
         spotify_id: raw.id,
         name: mapped.name,
         artist: mapped.artist,
         image: mapped.image,
         bpm: cached?.bpm ?? null,
-        camelot: cachedCamelot.label,
-        compatWithTrack1: compat1,
-        compatWithTrack2: compat2,
-        sortScore: compat1.score + compat2.score,
+        camelot: cachedCamelot,
       });
       continue;
     }
@@ -172,7 +196,6 @@ async function evaluateSpotifyCandidates(
   const analyzed = await Promise.all(
     toAnalyze.map(async ({ raw, mapped }) => {
       const analysis = await resolveBridgeCandidateAnalysis(raw.id);
-
       return { raw, mapped, bpm: analysis.bpm, camelot: analysis.camelot };
     })
   );
@@ -180,23 +203,94 @@ async function evaluateSpotifyCandidates(
   for (const { raw, mapped, bpm, camelot } of analyzed) {
     if (!camelot) continue;
 
-    const { pass, compat1, compat2 } = isCompatibleWithBoth(camelot, track1Key, track2Key);
-    if (!pass) continue;
-
-    passing.push({
+    resolved.push({
       spotify_id: raw.id,
       name: mapped.name,
       artist: mapped.artist,
       image: mapped.image,
       bpm,
-      camelot: camelot.label,
-      compatWithTrack1: compat1,
-      compatWithTrack2: compat2,
+      camelot,
+    });
+  }
+
+  return resolved;
+}
+
+function findSingleBridges(
+  resolved: ResolvedCandidate[],
+  track1Key: CamelotKey,
+  track2Key: CamelotKey
+): ScoredBridge[] {
+  const passing: ScoredBridge[] = [];
+
+  for (const candidate of resolved) {
+    const { pass, compat1, compat2 } = isCompatibleWithBoth(
+      candidate.camelot,
+      track1Key,
+      track2Key
+    );
+    if (!pass) continue;
+
+    passing.push({
+      ...toBridgeTrackResult(candidate, track1Key, track2Key),
       sortScore: compat1.score + compat2.score,
     });
   }
 
   return passing;
+}
+
+function findBestBridgePath(
+  resolved: ResolvedCandidate[],
+  track1Key: CamelotKey,
+  track2Key: CamelotKey
+): BridgeTrackResult[] | null {
+  const bridgeACandidates = resolved.filter(
+    (candidate) =>
+      isNonIncompatibleWithTrack(candidate.camelot, track1Key).type !== "incompatible"
+  );
+  const bridgeBCandidates = resolved.filter(
+    (candidate) =>
+      isNonIncompatibleWithTrack(candidate.camelot, track2Key).type !== "incompatible"
+  );
+
+  let bestPair: { bridgeA: ResolvedCandidate; bridgeB: ResolvedCandidate; score: number } | null =
+    null;
+
+  for (const bridgeA of bridgeACandidates) {
+    for (const bridgeB of bridgeBCandidates) {
+      if (bridgeA.spotify_id === bridgeB.spotify_id) continue;
+
+      const compatAB = isNonIncompatibleWithTrack(bridgeA.camelot, bridgeB.camelot);
+      if (compatAB.type === "incompatible") continue;
+
+      const compatA1 = isNonIncompatibleWithTrack(bridgeA.camelot, track1Key);
+      const compatB2 = isNonIncompatibleWithTrack(bridgeB.camelot, track2Key);
+      const score = compatA1.score + compatAB.score + compatB2.score;
+
+      if (!bestPair || score > bestPair.score) {
+        bestPair = { bridgeA, bridgeB, score };
+      }
+    }
+  }
+
+  if (!bestPair) return null;
+
+  return [
+    toBridgeTrackResult(bestPair.bridgeA, track1Key, track2Key),
+    toBridgeTrackResult(bestPair.bridgeB, track1Key, track2Key),
+  ];
+}
+
+function mergeResolvedCandidates(
+  existing: ResolvedCandidate[],
+  incoming: ResolvedCandidate[]
+): ResolvedCandidate[] {
+  const byId = new Map(existing.map((candidate) => [candidate.spotify_id, candidate]));
+  for (const candidate of incoming) {
+    byId.set(candidate.spotify_id, candidate);
+  }
+  return [...byId.values()];
 }
 
 async function fetchSpotifyRecommendations(
@@ -205,12 +299,16 @@ async function fetchSpotifyRecommendations(
 ): Promise<SpotifyApiTrack[]> {
   if (seedIds.length === 0) return [];
 
+  const seedTracks = seedIds.slice(0, 5).join(",");
   const params = new URLSearchParams({
-    limit: "20",
-    seed_tracks: seedIds.slice(0, 5).join(","),
+    limit: "50",
+    seed_tracks: seedTracks,
   });
 
-  const res = await fetch(`https://api.spotify.com/v1/recommendations?${params}`, {
+  const url = `https://api.spotify.com/v1/recommendations?${params}`;
+  console.log("[bridge] Spotify recommendations request:", { url, seed_tracks: seedTracks });
+
+  const res = await fetch(url, {
     headers,
     cache: "no-store",
   });
@@ -282,12 +380,12 @@ export async function POST(request: NextRequest) {
       (track) => (track.popularity ?? 0) >= MIN_BRIDGE_POPULARITY
     );
 
-    let passing = await evaluateSpotifyCandidates(
+    let resolvedCandidates = await resolveSpotifyCandidates(
       popularSpotifyCandidates,
-      track1Key,
-      track2Key,
       excludeIds
     );
+
+    let passing = findSingleBridges(resolvedCandidates, track1Key, track2Key);
 
     if (passing.length === 0) {
       const track1Meta = (await resolveTrackMetadataByIds([track1.spotify_id])).get(
@@ -308,16 +406,22 @@ export async function POST(request: NextRequest) {
           })
         );
 
-        passing = await evaluateSpotifyCandidates(
-          lastFmCandidates,
-          track1Key,
-          track2Key,
-          excludeIds
-        );
+        const lastFmResolved = await resolveSpotifyCandidates(lastFmCandidates, excludeIds);
+        resolvedCandidates = mergeResolvedCandidates(resolvedCandidates, lastFmResolved);
+        passing = findSingleBridges(resolvedCandidates, track1Key, track2Key);
       }
     }
 
-    return NextResponse.json({ bridges: topBridges(passing) });
+    if (passing.length > 0) {
+      return NextResponse.json({ type: "single", bridges: topBridges(passing) });
+    }
+
+    const pathBridges = findBestBridgePath(resolvedCandidates, track1Key, track2Key);
+    if (pathBridges) {
+      return NextResponse.json({ type: "path", bridges: pathBridges });
+    }
+
+    return NextResponse.json({ type: "single", bridges: [] });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";
     console.error("[bridge] Unhandled error:", err);

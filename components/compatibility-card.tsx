@@ -34,6 +34,7 @@ import {
   Info,
   GitBranch,
   Loader2,
+  ArrowRight,
 } from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
@@ -70,6 +71,48 @@ interface BridgeTrackResult {
   compatWithTrack2: KeyCompatibility;
 }
 
+interface BridgeTracksResponse {
+  type: "single" | "path";
+  bridges: BridgeTrackResult[];
+}
+
+const bridgeFetchInflight = new Map<string, Promise<BridgeTracksResponse>>();
+
+async function fetchBridgeTracksOnce(
+  requestKey: string,
+  body: {
+    track1: { spotify_id: string; camelot: string; bpm: number };
+    track2: { spotify_id: string; camelot: string; bpm: number };
+  }
+): Promise<BridgeTracksResponse> {
+  const existing = bridgeFetchInflight.get(requestKey);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const res = await fetch("/api/recommendations/bridge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) throw new Error("Bridge request failed");
+
+    const data = (await res.json()) as BridgeTracksResponse;
+    return {
+      type: data.type ?? "single",
+      bridges: data.bridges ?? [],
+    };
+  })();
+
+  bridgeFetchInflight.set(requestKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    bridgeFetchInflight.delete(requestKey);
+  }
+}
+
 function CompatBadge({ compat, prefix }: { compat: KeyCompatibility; prefix: string }) {
   const style = getKeyCompatStyle(compat.type);
   return (
@@ -83,6 +126,72 @@ function CompatBadge({ compat, prefix }: { compat: KeyCompatibility; prefix: str
     >
       {prefix}: {compat.label}
     </span>
+  );
+}
+
+function BridgeTrackCard({
+  bridge,
+  label,
+}: {
+  bridge: BridgeTrackResult;
+  label?: string;
+}) {
+  const camelotKey = parseMusicalKeyString(bridge.camelot);
+  const camelotStyle = camelotKey ? getKeyCompatStyle("compatible") : null;
+
+  return (
+    <div className="flex min-w-0 flex-1 items-start gap-3 rounded-xl border border-border/50 bg-background/30 p-3">
+      <div className="size-12 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+        {bridge.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={bridge.image} alt="" className="size-full object-cover" />
+        ) : (
+          <div className="size-full bg-muted" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+        {label && (
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a855f7]">
+            {label}
+          </p>
+        )}
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{bridge.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{bridge.artist}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {bridge.bpm != null && (
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {bridge.bpm} BPM
+            </span>
+          )}
+          {camelotKey && camelotStyle && (
+            <span
+              className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold font-mono"
+              style={{
+                color: camelotStyle.color,
+                backgroundColor: camelotStyle.bg,
+                borderColor: camelotStyle.border,
+              }}
+            >
+              {bridge.camelot}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <CompatBadge compat={bridge.compatWithTrack1} prefix="Track 1" />
+          <CompatBadge compat={bridge.compatWithTrack2} prefix="Track 2" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BridgePathConnector() {
+  return (
+    <div className="flex items-center justify-center px-1 py-1 sm:py-0">
+      <ArrowRight className="size-4 text-muted-foreground/80 rotate-90 sm:rotate-0" />
+    </div>
   );
 }
 
@@ -102,39 +211,35 @@ function BridgeTracksSection({
   bpmB: number | null;
 }) {
   const [loading, setLoading] = useState(true);
-  const [bridges, setBridges] = useState<BridgeTrackResult[]>([]);
+  const [bridgeResponse, setBridgeResponse] = useState<BridgeTracksResponse>({
+    type: "single",
+    bridges: [],
+  });
 
   useEffect(() => {
     let cancelled = false;
+    const requestKey = `${trackAId}:${trackBId}:${camelotA.label}:${camelotB.label}:${bpmA ?? 0}:${bpmB ?? 0}`;
+    const body = {
+      track1: {
+        spotify_id: trackAId,
+        camelot: camelotA.label,
+        bpm: bpmA ?? 0,
+      },
+      track2: {
+        spotify_id: trackBId,
+        camelot: camelotB.label,
+        bpm: bpmB ?? 0,
+      },
+    };
 
     async function loadBridges() {
       setLoading(true);
       try {
-        const res = await fetch("/api/recommendations/bridge", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            track1: {
-              spotify_id: trackAId,
-              camelot: camelotA.label,
-              bpm: bpmA ?? 0,
-            },
-            track2: {
-              spotify_id: trackBId,
-              camelot: camelotB.label,
-              bpm: bpmB ?? 0,
-            },
-          }),
-        });
-
-        if (!res.ok) throw new Error("Bridge request failed");
-
-        const data = (await res.json()) as { bridges?: BridgeTrackResult[] };
+        const results = await fetchBridgeTracksOnce(requestKey, body);
         if (cancelled) return;
-
-        setBridges(data.bridges ?? []);
+        setBridgeResponse(results);
       } catch {
-        if (!cancelled) setBridges([]);
+        if (!cancelled) setBridgeResponse({ type: "single", bridges: [] });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -145,6 +250,8 @@ function BridgeTracksSection({
       cancelled = true;
     };
   }, [trackAId, trackBId, camelotA.label, camelotB.label, bpmA, bpmB]);
+
+  const { type, bridges } = bridgeResponse;
 
   return (
     <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-3")} style={cohesiveSurfaceStyle()}>
@@ -167,61 +274,28 @@ function BridgeTracksSection({
         <p className="text-xs text-muted-foreground/70 text-center py-4">
           No bridge tracks found
         </p>
+      ) : type === "path" && bridges.length >= 2 ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted-foreground">
+            <span className="font-semibold text-[#c084fc]">Track 1</span>
+            <ArrowRight className="size-3 shrink-0" />
+            <span className="font-semibold text-foreground">Bridge A</span>
+            <ArrowRight className="size-3 shrink-0" />
+            <span className="font-semibold text-foreground">Bridge B</span>
+            <ArrowRight className="size-3 shrink-0" />
+            <span className="font-semibold text-[#93c5fd]">Track 2</span>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-stretch gap-1 sm:gap-2">
+            <BridgeTrackCard bridge={bridges[0]} label="Bridge A" />
+            <BridgePathConnector />
+            <BridgeTrackCard bridge={bridges[1]} label="Bridge B" />
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {bridges.map((bridge) => {
-            const camelotKey = parseMusicalKeyString(bridge.camelot);
-            const camelotStyle = camelotKey ? getKeyCompatStyle("compatible") : null;
-
-            return (
-              <div
-                key={bridge.spotify_id}
-                className="flex items-start gap-3 rounded-xl border border-border/50 bg-background/30 p-3"
-              >
-                <div className="size-12 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
-                  {bridge.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={bridge.image}
-                      alt=""
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <div className="size-full bg-muted" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground truncate">{bridge.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{bridge.artist}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {bridge.bpm != null && (
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {bridge.bpm} BPM
-                      </span>
-                    )}
-                    {camelotKey && camelotStyle && (
-                      <span
-                        className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold font-mono"
-                        style={{
-                          color: camelotStyle.color,
-                          backgroundColor: camelotStyle.bg,
-                          borderColor: camelotStyle.border,
-                        }}
-                      >
-                        {bridge.camelot}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <CompatBadge compat={bridge.compatWithTrack1} prefix="Track 1" />
-                    <CompatBadge compat={bridge.compatWithTrack2} prefix="Track 2" />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {bridges.map((bridge) => (
+            <BridgeTrackCard key={bridge.spotify_id} bridge={bridge} />
+          ))}
         </div>
       )}
     </div>
