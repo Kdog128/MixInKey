@@ -32,9 +32,12 @@ import {
   Lightbulb,
   ListPlus,
   Info,
+  Lock,
+  LockOpen,
   GitBranch,
   Loader2,
   ArrowRight,
+  Dices,
 } from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
@@ -83,13 +86,28 @@ async function fetchBridgeTracksOnce(
   body: {
     track1: { spotify_id: string; camelot: string; bpm: number };
     track2: { spotify_id: string; camelot: string; bpm: number };
-  }
+  },
+  options?: { bust?: boolean; lockedA?: string; lockedB?: string }
 ): Promise<BridgeTracksResponse> {
-  const existing = bridgeFetchInflight.get(requestKey);
-  if (existing) return existing;
+  const bust = options?.bust ?? false;
+  const lockedA = options?.lockedA?.trim();
+  const lockedB = options?.lockedB?.trim();
+
+  if (!bust && !lockedA && !lockedB) {
+    const existing = bridgeFetchInflight.get(requestKey);
+    if (existing) return existing;
+  }
 
   const promise = (async () => {
-    const res = await fetch("/api/recommendations/bridge", {
+    const params = new URLSearchParams();
+    if (bust) params.set("bust", "1");
+    if (lockedA) params.set("locked_a", lockedA);
+    if (lockedB) params.set("locked_b", lockedB);
+    const query = params.toString();
+    const url = query
+      ? `/api/recommendations/bridge?${query}`
+      : "/api/recommendations/bridge";
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -103,6 +121,8 @@ async function fetchBridgeTracksOnce(
       bridges: data.bridges ?? [],
     };
   })();
+
+  if (bust || lockedA || lockedB) return promise;
 
   bridgeFetchInflight.set(requestKey, promise);
 
@@ -187,6 +207,89 @@ function BridgeTrackCard({
   );
 }
 
+function BridgePathTrackCard({
+  bridge,
+  label,
+  locked,
+  onToggleLock,
+}: {
+  bridge: BridgeTrackResult;
+  label: string;
+  locked: boolean;
+  onToggleLock: () => void;
+}) {
+  const camelotKey = parseMusicalKeyString(bridge.camelot);
+  const camelotStyle = camelotKey ? getKeyCompatStyle("compatible") : null;
+
+  return (
+    <div
+      className={cn(
+        "relative flex min-w-0 flex-1 items-start gap-3 rounded-xl border bg-background/30 p-3 pt-9",
+        locked ? "border-[#a855f7]/45" : "border-border/50"
+      )}
+    >
+      <button
+        type="button"
+        onClick={onToggleLock}
+        aria-label={locked ? `Unlock ${label}` : `Lock ${label}`}
+        aria-pressed={locked}
+        className={cn(
+          "absolute top-2 right-2 inline-flex rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a855f7]/50",
+          locked
+            ? "text-[#a855f7]"
+            : "text-muted-foreground hover:text-muted-foreground/90"
+        )}
+      >
+        {locked ? (
+          <Lock className="size-3.5" aria-hidden="true" />
+        ) : (
+          <LockOpen className="size-3.5" aria-hidden="true" />
+        )}
+      </button>
+      <div className="size-12 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+        {bridge.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={bridge.image} alt="" className="size-full object-cover" />
+        ) : (
+          <div className="size-full bg-muted" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a855f7]">
+          {label}
+        </p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{bridge.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{bridge.artist}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {bridge.bpm != null && (
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {bridge.bpm} BPM
+            </span>
+          )}
+          {camelotKey && camelotStyle && (
+            <span
+              className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold font-mono"
+              style={{
+                color: camelotStyle.color,
+                backgroundColor: camelotStyle.bg,
+                borderColor: camelotStyle.border,
+              }}
+            >
+              {bridge.camelot}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <CompatBadge compat={bridge.compatWithTrack1} prefix="Track 1" />
+          <CompatBadge compat={bridge.compatWithTrack2} prefix="Track 2" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BridgePathConnector() {
   return (
     <div className="flex items-center justify-center px-1 py-1 sm:py-0">
@@ -215,27 +318,71 @@ function BridgeTracksSection({
     type: "single",
     bridges: [],
   });
+  const [lockedBridgeA, setLockedBridgeA] = useState(false);
+  const [lockedBridgeB, setLockedBridgeB] = useState(false);
+
+  const requestKey = `${trackAId}:${trackBId}:${camelotA.label}:${camelotB.label}:${bpmA ?? 0}:${bpmB ?? 0}`;
+  const requestBody = {
+    track1: {
+      spotify_id: trackAId,
+      camelot: camelotA.label,
+      bpm: bpmA ?? 0,
+    },
+    track2: {
+      spotify_id: trackBId,
+      camelot: camelotB.label,
+      bpm: bpmB ?? 0,
+    },
+  };
+
+  async function loadBridges(
+    bust = false,
+    locks?: { lockedA?: string; lockedB?: string }
+  ) {
+    setLoading(true);
+    try {
+      const results = await fetchBridgeTracksOnce(requestKey, requestBody, {
+        bust,
+        lockedA: locks?.lockedA,
+        lockedB: locks?.lockedB,
+      });
+      setBridgeResponse(results);
+      if (results.type !== "path") {
+        setLockedBridgeA(false);
+        setLockedBridgeB(false);
+      }
+    } catch {
+      setBridgeResponse({ type: "single", bridges: [] });
+      setLockedBridgeA(false);
+      setLockedBridgeB(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleReroll() {
+    const { type, bridges } = bridgeResponse;
+
+    if (type === "path" && bridges.length >= 2) {
+      if (lockedBridgeA && lockedBridgeB) return;
+
+      void loadBridges(true, {
+        lockedA: lockedBridgeA ? bridges[0].spotify_id : undefined,
+        lockedB: lockedBridgeB ? bridges[1].spotify_id : undefined,
+      });
+      return;
+    }
+
+    void loadBridges(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
-    const requestKey = `${trackAId}:${trackBId}:${camelotA.label}:${camelotB.label}:${bpmA ?? 0}:${bpmB ?? 0}`;
-    const body = {
-      track1: {
-        spotify_id: trackAId,
-        camelot: camelotA.label,
-        bpm: bpmA ?? 0,
-      },
-      track2: {
-        spotify_id: trackBId,
-        camelot: camelotB.label,
-        bpm: bpmB ?? 0,
-      },
-    };
 
-    async function loadBridges() {
+    async function loadInitialBridges() {
       setLoading(true);
       try {
-        const results = await fetchBridgeTracksOnce(requestKey, body);
+        const results = await fetchBridgeTracksOnce(requestKey, requestBody);
         if (cancelled) return;
         setBridgeResponse(results);
       } catch {
@@ -245,20 +392,46 @@ function BridgeTracksSection({
       }
     }
 
-    void loadBridges();
+    void loadInitialBridges();
     return () => {
       cancelled = true;
     };
   }, [trackAId, trackBId, camelotA.label, camelotB.label, bpmA, bpmB]);
 
+  useEffect(() => {
+    setLockedBridgeA(false);
+    setLockedBridgeB(false);
+  }, [trackAId, trackBId, camelotA.label, camelotB.label]);
+
   const { type, bridges } = bridgeResponse;
+  const bothPathBridgesLocked =
+    type === "path" && bridges.length >= 2 && lockedBridgeA && lockedBridgeB;
 
   return (
     <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-3")} style={cohesiveSurfaceStyle()}>
       <div className="flex items-start gap-2.5">
         <GitBranch className="size-5 text-[#a855f7] flex-shrink-0 mt-0.5" />
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold tracking-wide text-foreground">Bridge Tracks</h3>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold tracking-wide text-foreground">Bridge Tracks</h3>
+            <span className="group/reroll relative ml-auto inline-flex">
+              <button
+                type="button"
+                onClick={handleReroll}
+                disabled={loading || bothPathBridgesLocked}
+                aria-label="Get different suggestions"
+                className="inline-flex rounded-md p-1.5 text-muted-foreground transition-[color,filter] hover:text-white hover:drop-shadow-[0_0_8px_rgba(168,85,247,0.85)] disabled:pointer-events-none disabled:opacity-40 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a855f7]/50"
+              >
+                <Dices className="size-5" aria-hidden="true" />
+              </button>
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute top-[calc(100%+6px)] right-0 z-50 w-max rounded-md border border-border bg-popover px-2.5 py-1.5 text-[11px] text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 group-hover/reroll:visible group-hover/reroll:opacity-100"
+              >
+                Get different suggestions
+              </span>
+            </span>
+          </div>
           <p className="text-[11px] text-muted-foreground/80 mt-0.5 leading-snug">
             Tracks that connect both keys for a smoother mix transition
           </p>
@@ -286,9 +459,19 @@ function BridgeTracksSection({
             <span className="font-semibold text-[#93c5fd]">Track 2</span>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-stretch gap-1 sm:gap-2">
-            <BridgeTrackCard bridge={bridges[0]} label="Bridge A" />
+            <BridgePathTrackCard
+              bridge={bridges[0]}
+              label="Bridge A"
+              locked={lockedBridgeA}
+              onToggleLock={() => setLockedBridgeA((value) => !value)}
+            />
             <BridgePathConnector />
-            <BridgeTrackCard bridge={bridges[1]} label="Bridge B" />
+            <BridgePathTrackCard
+              bridge={bridges[1]}
+              label="Bridge B"
+              locked={lockedBridgeB}
+              onToggleLock={() => setLockedBridgeB((value) => !value)}
+            />
           </div>
         </div>
       ) : (

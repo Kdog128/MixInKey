@@ -1,3 +1,5 @@
+// -- CREATE TABLE bridge_cache (cache_key text PRIMARY KEY, result jsonb NOT NULL, created_at timestamptz DEFAULT now());
+
 import { NextRequest, NextResponse } from "next/server";
 import {
   getKeyCompatibility,
@@ -5,11 +7,12 @@ import {
   type CamelotKey,
   type KeyCompatibility,
 } from "@/lib/camelot";
-import { fetchLastFmSimilarTracks } from "@/lib/lastfm";
+import { fetchLastFmSimilarTracks, type LastFmSimilarTrack } from "@/lib/lastfm";
 import { fetchReccoBeatsBySpotifyIds } from "@/lib/reccobeats";
 import { getSpotifyToken } from "@/lib/spotify-auth";
 import { fetchSoundNetAnalysis } from "@/lib/soundnet";
 import { mapSpotifyTrack, type SpotifyApiTrack } from "@/lib/spotify-track";
+import { createSupabaseServerClient } from "@/lib/supabase";
 import { resolveTrackMetadataByIds } from "@/lib/track-metadata";
 import { getCachedTrackAnalysis, getCachedTracksAnalysis } from "@/lib/tracks-cache";
 
@@ -34,9 +37,115 @@ interface ScoredBridge extends BridgeTrackResult {
   sortScore: number;
 }
 
+interface BridgeResponse {
+  type: "single" | "path";
+  bridges: BridgeTrackResult[];
+}
+
+interface BridgeCacheRow {
+  cache_key: string;
+  result: BridgeResponse;
+  created_at: string;
+}
+
 const MIN_BRIDGE_POPULARITY = 25;
 const MAX_PARALLEL_ANALYSIS = 2;
 const CANDIDATE_LOOKUP_TIMEOUT_MS = 6000;
+const BRIDGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const LASTFM_SIMILAR_LIMIT = 50;
+
+function mergeLastFmSimilarTracks(
+  ...lists: LastFmSimilarTrack[][]
+): LastFmSimilarTrack[] {
+  const seen = new Set<string>();
+  const merged: LastFmSimilarTrack[] = [];
+
+  for (const list of lists) {
+    for (const track of list) {
+      const key = `${track.name.toLowerCase()}|${track.artist.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(track);
+    }
+  }
+
+  return merged;
+}
+
+function buildBridgeCacheKey(track1Id: string, track2Id: string): string {
+  return `bridge:${[track1Id, track2Id].sort().join(":")}`;
+}
+
+function isBridgeCacheFresh(createdAt: string): boolean {
+  const createdMs = Date.parse(createdAt);
+  if (!Number.isFinite(createdMs)) return false;
+  return Date.now() - createdMs < BRIDGE_CACHE_TTL_MS;
+}
+
+async function getFreshBridgeCache(cacheKey: string): Promise<BridgeResponse | null> {
+  const supabase = createSupabaseServerClient();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from("bridge_cache")
+      .select("cache_key, result, created_at")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("[bridge] Cache read failed:", { cacheKey, message: error.message });
+      return null;
+    }
+
+    if (!data) return null;
+
+    const row = data as BridgeCacheRow;
+    if (!isBridgeCacheFresh(row.created_at)) {
+      console.log("[bridge] Cache stale:", cacheKey);
+      return null;
+    }
+
+    const result = row.result;
+    if (!result || !Array.isArray(result.bridges) || result.bridges.length === 0) {
+      return null;
+    }
+
+    console.log("[bridge] Cache hit:", cacheKey);
+    return {
+      type: result.type === "path" ? "path" : "single",
+      bridges: result.bridges,
+    };
+  } catch (err) {
+    console.warn("[bridge] Cache read error:", err);
+    return null;
+  }
+}
+
+async function saveBridgeCache(cacheKey: string, result: BridgeResponse): Promise<void> {
+  const supabase = createSupabaseServerClient();
+  if (!supabase) return;
+
+  try {
+    const { error } = await supabase.from("bridge_cache").upsert(
+      {
+        cache_key: cacheKey,
+        result,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "cache_key" }
+    );
+
+    if (error) {
+      console.warn("[bridge] Cache save failed:", { cacheKey, message: error.message });
+      return;
+    }
+
+    console.log("[bridge] Cache saved:", cacheKey);
+  } catch (err) {
+    console.warn("[bridge] Cache save error:", err);
+  }
+}
 
 interface BridgeCandidateAnalysis {
   bpm: number | null;
@@ -282,6 +391,115 @@ function findBestBridgePath(
   ];
 }
 
+async function resolveLockedBridgeCandidate(
+  spotifyId: string,
+  resolved: ResolvedCandidate[]
+): Promise<ResolvedCandidate | null> {
+  const fromResolved = resolved.find((candidate) => candidate.spotify_id === spotifyId);
+  if (fromResolved) return fromResolved;
+
+  const cached = await getCachedTrackAnalysis(spotifyId);
+  const metadataMap = await resolveTrackMetadataByIds([spotifyId]);
+  const metadata = metadataMap.get(spotifyId);
+
+  if (cached?.camelot && metadata) {
+    return {
+      spotify_id: spotifyId,
+      name: metadata.name,
+      artist: metadata.artist,
+      image: metadata.image,
+      bpm: cached.bpm,
+      camelot: cached.camelot,
+    };
+  }
+
+  const analysis = await resolveBridgeCandidateAnalysis(spotifyId);
+  if (!analysis.camelot || !metadata) return null;
+
+  return {
+    spotify_id: spotifyId,
+    name: metadata.name,
+    artist: metadata.artist,
+    image: metadata.image,
+    bpm: analysis.bpm,
+    camelot: analysis.camelot,
+  };
+}
+
+async function findBridgePathWithLockedA(
+  lockedAId: string,
+  resolved: ResolvedCandidate[],
+  track1Key: CamelotKey,
+  track2Key: CamelotKey
+): Promise<BridgeTrackResult[] | null> {
+  const bridgeA = await resolveLockedBridgeCandidate(lockedAId, resolved);
+  if (!bridgeA) return null;
+
+  const compatA1 = isNonIncompatibleWithTrack(bridgeA.camelot, track1Key);
+  if (compatA1.type === "incompatible") return null;
+
+  let bestB: ResolvedCandidate | null = null;
+  let bestScore = -1;
+
+  for (const candidate of resolved) {
+    if (candidate.spotify_id === bridgeA.spotify_id) continue;
+
+    const compatAB = isNonIncompatibleWithTrack(bridgeA.camelot, candidate.camelot);
+    const compatB2 = isNonIncompatibleWithTrack(candidate.camelot, track2Key);
+    if (compatAB.type === "incompatible" || compatB2.type === "incompatible") continue;
+
+    const score = compatA1.score + compatAB.score + compatB2.score;
+    if (score > bestScore) {
+      bestScore = score;
+      bestB = candidate;
+    }
+  }
+
+  if (!bestB) return null;
+
+  return [
+    toBridgeTrackResult(bridgeA, track1Key, track2Key),
+    toBridgeTrackResult(bestB, track1Key, track2Key),
+  ];
+}
+
+async function findBridgePathWithLockedB(
+  lockedBId: string,
+  resolved: ResolvedCandidate[],
+  track1Key: CamelotKey,
+  track2Key: CamelotKey
+): Promise<BridgeTrackResult[] | null> {
+  const bridgeB = await resolveLockedBridgeCandidate(lockedBId, resolved);
+  if (!bridgeB) return null;
+
+  const compatB2 = isNonIncompatibleWithTrack(bridgeB.camelot, track2Key);
+  if (compatB2.type === "incompatible") return null;
+
+  let bestA: ResolvedCandidate | null = null;
+  let bestScore = -1;
+
+  for (const candidate of resolved) {
+    if (candidate.spotify_id === bridgeB.spotify_id) continue;
+
+    const compatA1 = isNonIncompatibleWithTrack(candidate.camelot, track1Key);
+    const compatAB = isNonIncompatibleWithTrack(candidate.camelot, bridgeB.camelot);
+    if (compatA1.type === "incompatible" || compatAB.type === "incompatible") continue;
+
+    const score = compatA1.score + compatAB.score + compatB2.score;
+    if (score > bestScore) {
+      bestScore = score;
+      bestA = candidate;
+    }
+  }
+
+  if (!bestA) return null;
+
+  return [
+    toBridgeTrackResult(bestA, track1Key, track2Key),
+    toBridgeTrackResult(bridgeB, track1Key, track2Key),
+  ];
+}
+
 function mergeResolvedCandidates(
   existing: ResolvedCandidate[],
   incoming: ResolvedCandidate[]
@@ -360,6 +578,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid track1 or track2 payload" }, { status: 400 });
     }
 
+    const cacheKey = buildBridgeCacheKey(track1.spotify_id, track2.spotify_id);
+    const bustCache = request.nextUrl.searchParams.get("bust") === "1";
+    const lockedAId = request.nextUrl.searchParams.get("locked_a")?.trim() || null;
+    const lockedBId = request.nextUrl.searchParams.get("locked_b")?.trim() || null;
+
+    if (!bustCache) {
+      const cachedResult = await getFreshBridgeCache(cacheKey);
+      if (cachedResult) {
+        return NextResponse.json(cachedResult);
+      }
+    }
+
     const track1Key = parseMusicalKeyString(track1.camelot);
     const track2Key = parseMusicalKeyString(track2.camelot);
 
@@ -388,12 +618,33 @@ export async function POST(request: NextRequest) {
     let passing = findSingleBridges(resolvedCandidates, track1Key, track2Key);
 
     if (passing.length === 0) {
-      const track1Meta = (await resolveTrackMetadataByIds([track1.spotify_id])).get(
-        track1.spotify_id
+      const metadataById = await resolveTrackMetadataByIds([
+        track1.spotify_id,
+        track2.spotify_id,
+      ]);
+      const track1Meta = metadataById.get(track1.spotify_id);
+      const track2Meta = metadataById.get(track2.spotify_id);
+
+      const similar = mergeLastFmSimilarTracks(
+        ...(await Promise.all([
+          track1Meta
+            ? fetchLastFmSimilarTracks(
+                track1Meta.name,
+                track1Meta.artist,
+                LASTFM_SIMILAR_LIMIT
+              )
+            : Promise.resolve([]),
+          track2Meta
+            ? fetchLastFmSimilarTracks(
+                track2Meta.name,
+                track2Meta.artist,
+                LASTFM_SIMILAR_LIMIT
+              )
+            : Promise.resolve([]),
+        ]))
       );
 
-      if (track1Meta) {
-        const similar = await fetchLastFmSimilarTracks(track1Meta.name, track1Meta.artist, 20);
+      if (similar.length > 0) {
         const lastFmCandidates: SpotifyApiTrack[] = [];
         const seenIds = new Set(excludeIds);
 
@@ -412,13 +663,45 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (lockedAId || lockedBId) {
+      let pathBridges: BridgeTrackResult[] | null = null;
+
+      if (lockedAId && !lockedBId) {
+        pathBridges = await findBridgePathWithLockedA(
+          lockedAId,
+          resolvedCandidates,
+          track1Key,
+          track2Key
+        );
+      } else if (lockedBId && !lockedAId) {
+        pathBridges = await findBridgePathWithLockedB(
+          lockedBId,
+          resolvedCandidates,
+          track1Key,
+          track2Key
+        );
+      }
+
+      if (pathBridges) {
+        const response: BridgeResponse = { type: "path", bridges: pathBridges };
+        await saveBridgeCache(cacheKey, response);
+        return NextResponse.json(response);
+      }
+
+      return NextResponse.json({ type: "single", bridges: [] });
+    }
+
     if (passing.length > 0) {
-      return NextResponse.json({ type: "single", bridges: topBridges(passing) });
+      const response: BridgeResponse = { type: "single", bridges: topBridges(passing) };
+      await saveBridgeCache(cacheKey, response);
+      return NextResponse.json(response);
     }
 
     const pathBridges = findBestBridgePath(resolvedCandidates, track1Key, track2Key);
     if (pathBridges) {
-      return NextResponse.json({ type: "path", bridges: pathBridges });
+      const response: BridgeResponse = { type: "path", bridges: pathBridges };
+      await saveBridgeCache(cacheKey, response);
+      return NextResponse.json(response);
     }
 
     return NextResponse.json({ type: "single", bridges: [] });
