@@ -20,7 +20,7 @@ interface ArtworkMosaicWallProps {
 const TILE_COUNT = 72;
 const IMAGE_OPACITY = 0.19;
 const CROSSFADE_MS = 1000;
-const ARTWORK_FETCH_LIMIT = 72;
+const ARTWORK_FETCH_LIMIT = 500;
 
 function dedupeArtworkUrls(urls: string[]): string[] {
   const seen = new Set<string>();

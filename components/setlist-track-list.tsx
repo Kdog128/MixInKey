@@ -5,6 +5,8 @@ import {
   DragDropContext,
   Droppable,
   Draggable,
+  type DraggableProvided,
+  type DraggableStateSnapshot,
   type DropResult,
 } from "@hello-pangea/dnd";
 import { GripVertical, Trash2, Heart, Music } from "lucide-react";
@@ -125,6 +127,153 @@ function TrackRowsBox({ children }: { children: React.ReactNode }) {
   );
 }
 
+interface SetlistTrackRowProps {
+  track: SetlistTrack;
+  index: number;
+  trackCount: number;
+  dragProvided: DraggableProvided;
+  snapshot: DraggableStateSnapshot;
+  favoriteIds: Set<string>;
+  onFavoriteToggle: (track: SetlistTrack) => void;
+  onRemove: (spotifyId: string) => void;
+  outgoingTransition: TransitionAnalysis | null;
+  camelotLabel: string | null;
+}
+
+function SetlistTrackRow({
+  track,
+  index,
+  trackCount,
+  dragProvided,
+  snapshot,
+  favoriteIds,
+  onFavoriteToggle,
+  onRemove,
+  outgoingTransition,
+  camelotLabel,
+}: SetlistTrackRowProps) {
+  const { style: dragStyle, ...draggableProps } = dragProvided.draggableProps;
+  const isDraggingVisual = snapshot.isDragging || snapshot.isClone;
+
+  return (
+    <div
+      ref={dragProvided.innerRef}
+      {...draggableProps}
+      style={dragStyle}
+      className={cn(index < trackCount - 1 && "mb-2.5")}
+    >
+      <div
+        className={cn(
+          COHESIVE_INNER_CARD_CLASS,
+          "h-full w-full px-3 py-4 min-w-0",
+          "flex items-center gap-2 sm:gap-0",
+          SETLIST_TRACK_GRID_CLASS,
+          isDraggingVisual && "shadow-lg ring-1 ring-white/10"
+        )}
+        style={cohesiveSurfaceStyle()}
+      >
+        <button
+          type="button"
+          {...dragProvided.dragHandleProps}
+          aria-label={`Reorder ${track.name}`}
+          className="flex-shrink-0 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+
+        {track.image ? (
+          <img
+            src={track.image}
+            alt=""
+            className="size-12 rounded-md object-cover flex-shrink-0 ring-1 ring-white/10"
+          />
+        ) : (
+          <div className="size-12 rounded-md bg-muted flex items-center justify-center flex-shrink-0 ring-1 ring-white/10">
+            <Music className="size-5 text-muted-foreground" />
+          </div>
+        )}
+
+        <span className="flex-shrink-0 w-5 sm:w-6 text-sm font-mono text-muted-foreground text-center">
+          {track.position}
+        </span>
+
+        <div className="min-w-0 overflow-hidden sm:col-auto flex-1 sm:flex-none">
+          <p
+            className="text-base font-semibold truncate text-foreground"
+            title={track.name}
+          >
+            {track.name}
+          </p>
+          <p className="text-sm text-muted-foreground truncate" title={track.artist}>
+            {track.artist}
+          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-1 sm:hidden">
+            <span className="text-xs font-mono text-muted-foreground">
+              {track.bpm != null ? `${track.bpm} BPM` : "— BPM"}
+            </span>
+            {camelotLabel && (
+              <CamelotLabelBadge label={camelotLabel} transition={outgoingTransition} />
+            )}
+          </div>
+        </div>
+
+        <span className="hidden sm:block text-right text-sm font-mono text-muted-foreground tabular-nums">
+          {track.bpm != null ? track.bpm : "—"}
+        </span>
+
+        <div className="hidden sm:flex justify-center">
+          {camelotLabel ? (
+            <CamelotLabelBadge label={camelotLabel} transition={outgoingTransition} />
+          ) : (
+            <span className="text-sm text-muted-foreground">—</span>
+          )}
+        </div>
+
+        <div className="hidden sm:flex justify-end min-w-0">
+          {outgoingTransition ? <TransitionBadge transition={outgoingTransition} /> : null}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onFavoriteToggle(track)}
+          aria-label={
+            favoriteIds.has(track.spotify_id) ? "Remove from favorites" : "Save to favorites"
+          }
+          aria-pressed={favoriteIds.has(track.spotify_id)}
+          className={cn(
+            "flex-shrink-0 size-8 rounded-full flex items-center justify-center transition-colors",
+            favoriteIds.has(track.spotify_id)
+              ? "text-rose-400 hover:text-rose-300 hover:bg-rose-400/10"
+              : "text-muted-foreground hover:text-rose-400 hover:bg-rose-400/10"
+          )}
+        >
+          <Heart
+            className={cn("size-4", favoriteIds.has(track.spotify_id) && "fill-current")}
+          />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onRemove(track.spotify_id)}
+          aria-label={`Remove ${track.name}`}
+          className="flex-shrink-0 size-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getTrackRowContext(tracks: SetlistTrack[], index: number) {
+  const track = tracks[index];
+  const nextTrack = tracks[index + 1];
+  const outgoingTransition = nextTrack ? getTransitionAnalysis(track, nextTrack) : null;
+  const camelotLabel = displayCamelotLabel(track);
+
+  return { track, outgoingTransition, camelotLabel };
+}
+
 export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackListProps) {
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
@@ -176,138 +325,63 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
       <SetlistTrackListHeader />
       <TrackRowsBox>
         <DragDropContext onDragEnd={handleDragEnd}>
-          <Droppable droppableId="setlist">
+          <Droppable
+            droppableId="setlist"
+            getContainerForClone={() => document.body}
+            renderClone={(provided, snapshot, rubric) => {
+              const { track, outgoingTransition, camelotLabel } = getTrackRowContext(
+                tracks,
+                rubric.source.index
+              );
+
+              return (
+                <SetlistTrackRow
+                  track={track}
+                  index={rubric.source.index}
+                  trackCount={tracks.length}
+                  dragProvided={provided}
+                  snapshot={snapshot}
+                  favoriteIds={favoriteIds}
+                  onFavoriteToggle={handleFavoriteToggle}
+                  onRemove={onRemove}
+                  outgoingTransition={outgoingTransition}
+                  camelotLabel={camelotLabel}
+                />
+              );
+            }}
+          >
             {(provided) => (
               <div
                 ref={provided.innerRef}
                 {...provided.droppableProps}
-                className="flex flex-col gap-2.5 p-3 sm:p-4"
+                className="flex flex-col p-3 sm:p-4"
               >
                 {tracks.map((track, index) => {
-              const nextTrack = tracks[index + 1];
-              const outgoingTransition = nextTrack
-                ? getTransitionAnalysis(track, nextTrack)
-                : null;
-              const camelotLabel = displayCamelotLabel(track);
+                  const { outgoingTransition, camelotLabel } = getTrackRowContext(tracks, index);
 
-              return (
-                <Draggable key={track.spotify_id} draggableId={track.spotify_id} index={index}>
-                  {(dragProvided, snapshot) => (
-                    <div
-                      ref={dragProvided.innerRef}
-                      {...dragProvided.draggableProps}
-                      className={cn(
-                        COHESIVE_INNER_CARD_CLASS,
-                        "px-3 py-4 min-w-0",
-                        "flex items-center gap-2 sm:gap-0",
-                        SETLIST_TRACK_GRID_CLASS,
-                        snapshot.isDragging && "shadow-lg ring-1 ring-white/10"
-                      )}
-                      style={cohesiveSurfaceStyle()}
+                  return (
+                    <Draggable
+                      key={track.spotify_id}
+                      draggableId={track.spotify_id}
+                      index={index}
                     >
-                      <button
-                        type="button"
-                        {...dragProvided.dragHandleProps}
-                        aria-label={`Reorder ${track.name}`}
-                        className="flex-shrink-0 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
-                      >
-                        <GripVertical className="size-4" />
-                      </button>
-
-                      {track.image ? (
-                        <img
-                          src={track.image}
-                          alt=""
-                          className="size-12 rounded-md object-cover flex-shrink-0 ring-1 ring-white/10"
+                      {(dragProvided, snapshot) => (
+                        <SetlistTrackRow
+                          track={track}
+                          index={index}
+                          trackCount={tracks.length}
+                          dragProvided={dragProvided}
+                          snapshot={snapshot}
+                          favoriteIds={favoriteIds}
+                          onFavoriteToggle={handleFavoriteToggle}
+                          onRemove={onRemove}
+                          outgoingTransition={outgoingTransition}
+                          camelotLabel={camelotLabel}
                         />
-                      ) : (
-                        <div className="size-12 rounded-md bg-muted flex items-center justify-center flex-shrink-0 ring-1 ring-white/10">
-                          <Music className="size-5 text-muted-foreground" />
-                        </div>
                       )}
-
-                      <span className="flex-shrink-0 w-5 sm:w-6 text-sm font-mono text-muted-foreground text-center">
-                        {track.position}
-                      </span>
-
-                      <div className="min-w-0 overflow-hidden sm:col-auto flex-1 sm:flex-none">
-                        <p
-                          className="text-base font-semibold truncate text-foreground"
-                          title={track.name}
-                        >
-                          {track.name}
-                        </p>
-                        <p
-                          className="text-sm text-muted-foreground truncate"
-                          title={track.artist}
-                        >
-                          {track.artist}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2 mt-1 sm:hidden">
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {track.bpm != null ? `${track.bpm} BPM` : "— BPM"}
-                          </span>
-                          {camelotLabel && (
-                            <CamelotLabelBadge label={camelotLabel} transition={outgoingTransition} />
-                          )}
-                        </div>
-                      </div>
-
-                      <span className="hidden sm:block text-right text-sm font-mono text-muted-foreground tabular-nums">
-                        {track.bpm != null ? track.bpm : "—"}
-                      </span>
-
-                      <div className="hidden sm:flex justify-center">
-                        {camelotLabel ? (
-                          <CamelotLabelBadge label={camelotLabel} transition={outgoingTransition} />
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
-                      </div>
-
-                      <div className="hidden sm:flex justify-end min-w-0">
-                        {outgoingTransition ? (
-                          <TransitionBadge transition={outgoingTransition} />
-                        ) : null}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleFavoriteToggle(track)}
-                        aria-label={
-                          favoriteIds.has(track.spotify_id)
-                            ? "Remove from favorites"
-                            : "Save to favorites"
-                        }
-                        aria-pressed={favoriteIds.has(track.spotify_id)}
-                        className={cn(
-                          "flex-shrink-0 size-8 rounded-full flex items-center justify-center transition-colors",
-                          favoriteIds.has(track.spotify_id)
-                            ? "text-rose-400 hover:text-rose-300 hover:bg-rose-400/10"
-                            : "text-muted-foreground hover:text-rose-400 hover:bg-rose-400/10"
-                        )}
-                      >
-                        <Heart
-                          className={cn(
-                            "size-4",
-                            favoriteIds.has(track.spotify_id) && "fill-current"
-                          )}
-                        />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => onRemove(track.spotify_id)}
-                        aria-label={`Remove ${track.name}`}
-                        className="flex-shrink-0 size-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                  )}
-                </Draggable>
-              );
-            })}
+                    </Draggable>
+                  );
+                })}
                 {provided.placeholder}
               </div>
             )}

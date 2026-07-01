@@ -58,6 +58,8 @@ export const EXAMPLE_TRACK_POOL: readonly ExampleTrackPlaceholder[] = [
   { title: "Starry Night", artist: "Peggy Gou" },
 ];
 
+export const DEFAULT_EXAMPLE_TRACK: ExampleTrackPlaceholder = EXAMPLE_TRACK_POOL[0];
+
 function sameExampleTrack(
   a: ExampleTrackPlaceholder,
   b: ExampleTrackPlaceholder

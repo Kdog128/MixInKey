@@ -21,6 +21,7 @@ import {
 } from "@/lib/setlist";
 import type { TrackFeatures } from "@/components/compatibility-card";
 import {
+  DEFAULT_EXAMPLE_TRACK,
   pickExampleTrack,
   type ExampleTrackPlaceholder,
 } from "@/lib/example-track-placeholders";
@@ -104,10 +105,13 @@ export default function SetlistPage() {
   const savedSetsRef = useRef<HTMLDivElement>(null);
   const saveNameInputRef = useRef<HTMLInputElement>(null);
   const renameNameInputRef = useRef<HTMLInputElement>(null);
-  const [exampleTrack, setExampleTrack] = useState<ExampleTrackPlaceholder>(() =>
-    pickExampleTrack()
-  );
+  const [exampleTrack, setExampleTrack] =
+    useState<ExampleTrackPlaceholder>(DEFAULT_EXAMPLE_TRACK);
   const documentVisible = useDocumentVisible();
+
+  useEffect(() => {
+    setExampleTrack((current) => pickExampleTrack(current));
+  }, []);
 
   useEffect(() => {
     if (!documentVisible) return;

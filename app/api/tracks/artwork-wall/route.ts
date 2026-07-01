@@ -4,8 +4,8 @@ import { getRecentCachedArtworkUrls } from "@/lib/tracks-cache";
 export async function GET(request: NextRequest) {
   try {
     const limitParam = request.nextUrl.searchParams.get("limit");
-    const parsed = limitParam ? Number.parseInt(limitParam, 10) : 72;
-    const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 72) : 72;
+    const parsed = limitParam ? Number.parseInt(limitParam, 10) : 500;
+    const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 500) : 500;
     const artwork_urls = await getRecentCachedArtworkUrls(limit);
 
     console.log("[artwork-wall] API response:", {

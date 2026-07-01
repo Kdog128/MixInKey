@@ -108,6 +108,10 @@ export default function Home() {
   }, [resetCompatibilityPage]);
 
   useEffect(() => {
+    setExampleArtistPair((current) => pickExampleArtistPair(current));
+  }, []);
+
+  useEffect(() => {
     if (!bothTracksEmpty || !documentVisible) return;
 
     const timer = window.setInterval(() => {

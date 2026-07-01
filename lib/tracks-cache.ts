@@ -154,7 +154,7 @@ export async function getRecentCachedArtworkUrls(limit = 72): Promise<string[]> 
     return [];
   }
 
-  const cappedLimit = Math.min(Math.max(limit, 1), 72);
+  const cappedLimit = Math.min(Math.max(limit, 1), 500);
 
   try {
     const { data, error } = await supabase
