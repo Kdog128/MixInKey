@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   CamelotKey,
   getBpmCompatibility,
@@ -14,13 +14,27 @@ import {
   getOverallCompatibilityFromTrackData,
   getStatBadgeStyle,
   parseMusicalKeyString,
+  type KeyCompatibility,
   type KeyCompatStyle,
 } from "@/lib/camelot";
 import { CamelotWheel } from "@/components/camelot-wheel";
 import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import { COHESIVE_INNER_CARD_CLASS, cohesiveSurfaceStyle } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
-import { Activity, Clock, Tag, TrendingUp, Calendar, Zap, KeyRound, Lightbulb, ListPlus, Info } from "lucide-react";
+import {
+  Activity,
+  Clock,
+  Tag,
+  TrendingUp,
+  Calendar,
+  Zap,
+  KeyRound,
+  Lightbulb,
+  ListPlus,
+  Info,
+  GitBranch,
+  Loader2,
+} from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
 
@@ -39,8 +53,179 @@ export interface TrackFeatures {
 interface CompatibilityCardProps {
   featuresA: TrackFeatures;
   featuresB: TrackFeatures;
+  trackAId?: string;
+  trackBId?: string;
   onAddToSetA?: () => void;
   onAddToSetB?: () => void;
+}
+
+interface BridgeTrackResult {
+  spotify_id: string;
+  name: string;
+  artist: string;
+  image: string | null;
+  bpm: number | null;
+  camelot: string;
+  compatWithTrack1: KeyCompatibility;
+  compatWithTrack2: KeyCompatibility;
+}
+
+function CompatBadge({ compat, prefix }: { compat: KeyCompatibility; prefix: string }) {
+  const style = getKeyCompatStyle(compat.type);
+  return (
+    <span
+      className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-tight"
+      style={{
+        color: style.color,
+        backgroundColor: style.bg,
+        borderColor: style.border,
+      }}
+    >
+      {prefix}: {compat.label}
+    </span>
+  );
+}
+
+function BridgeTracksSection({
+  trackAId,
+  trackBId,
+  camelotA,
+  camelotB,
+  bpmA,
+  bpmB,
+}: {
+  trackAId: string;
+  trackBId: string;
+  camelotA: CamelotKey;
+  camelotB: CamelotKey;
+  bpmA: number | null;
+  bpmB: number | null;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [bridges, setBridges] = useState<BridgeTrackResult[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBridges() {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/recommendations/bridge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            track1: {
+              spotify_id: trackAId,
+              camelot: camelotA.label,
+              bpm: bpmA ?? 0,
+            },
+            track2: {
+              spotify_id: trackBId,
+              camelot: camelotB.label,
+              bpm: bpmB ?? 0,
+            },
+          }),
+        });
+
+        if (!res.ok) throw new Error("Bridge request failed");
+
+        const data = (await res.json()) as { bridges?: BridgeTrackResult[] };
+        if (cancelled) return;
+
+        setBridges(data.bridges ?? []);
+      } catch {
+        if (!cancelled) setBridges([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadBridges();
+    return () => {
+      cancelled = true;
+    };
+  }, [trackAId, trackBId, camelotA.label, camelotB.label, bpmA, bpmB]);
+
+  return (
+    <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-3")} style={cohesiveSurfaceStyle()}>
+      <div className="flex items-start gap-2.5">
+        <GitBranch className="size-5 text-[#a855f7] flex-shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold tracking-wide text-foreground">Bridge Tracks</h3>
+          <p className="text-[11px] text-muted-foreground/80 mt-0.5 leading-snug">
+            Tracks that connect both keys for a smoother mix transition
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+          <Loader2 className="size-4 animate-spin text-[#a855f7]" />
+          Finding bridge tracks…
+        </div>
+      ) : bridges.length === 0 ? (
+        <p className="text-xs text-muted-foreground/70 text-center py-4">
+          No bridge tracks found
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {bridges.map((bridge) => {
+            const camelotKey = parseMusicalKeyString(bridge.camelot);
+            const camelotStyle = camelotKey ? getKeyCompatStyle("compatible") : null;
+
+            return (
+              <div
+                key={bridge.spotify_id}
+                className="flex items-start gap-3 rounded-xl border border-border/50 bg-background/30 p-3"
+              >
+                <div className="size-12 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+                  {bridge.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={bridge.image}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <div className="size-full bg-muted" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground truncate">{bridge.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{bridge.artist}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {bridge.bpm != null && (
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {bridge.bpm} BPM
+                      </span>
+                    )}
+                    {camelotKey && camelotStyle && (
+                      <span
+                        className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold font-mono"
+                        style={{
+                          color: camelotStyle.color,
+                          backgroundColor: camelotStyle.bg,
+                          borderColor: camelotStyle.border,
+                        }}
+                      >
+                        {bridge.camelot}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <CompatBadge compat={bridge.compatWithTrack1} prefix="Track 1" />
+                    <CompatBadge compat={bridge.compatWithTrack2} prefix="Track 2" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getScoreStyle(score: number): { color: string; label: string } {
@@ -275,6 +460,8 @@ function formatReleaseDate(date: string | null): string {
 export function CompatibilityCard({
   featuresA,
   featuresB,
+  trackAId,
+  trackBId,
   onAddToSetA,
   onAddToSetB,
 }: CompatibilityCardProps) {
@@ -537,6 +724,21 @@ export function CompatibilityCard({
           {mixingTip ?? "BPM and key data needed for a mixing tip."}
         </p>
       </div>
+
+      {(keyCompat?.type === "incompatible" || keyCompat?.type === "adjacent") &&
+        camelotA &&
+        camelotB &&
+        trackAId &&
+        trackBId && (
+          <BridgeTracksSection
+            trackAId={trackAId}
+            trackBId={trackBId}
+            camelotA={camelotA}
+            camelotB={camelotB}
+            bpmA={featuresA.bpm}
+            bpmB={featuresB.bpm}
+          />
+        )}
 
       <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3")} style={cohesiveSurfaceStyle()}>
         <SourceBadgesFooter />

@@ -51,6 +51,24 @@ interface LastFmArtistGetInfoResponse {
   message?: string;
 }
 
+interface LastFmSimilarTrackItem {
+  name?: string;
+  artist?: { name?: string } | string;
+}
+
+interface LastFmTrackGetSimilarResponse {
+  similartracks?: {
+    track?: LastFmSimilarTrackItem | LastFmSimilarTrackItem[];
+  };
+  error?: number;
+  message?: string;
+}
+
+export interface LastFmSimilarTrack {
+  name: string;
+  artist: string;
+}
+
 function getApiKey(): string | null {
   const key = process.env.LASTFM_API_KEY?.trim();
   return key || null;
@@ -80,6 +98,12 @@ function extractTags(data: LastFmArtistGetInfoResponse): string[] {
   }
 
   return genres;
+}
+
+function similarTrackArtist(item: LastFmSimilarTrackItem): string {
+  const artist = item.artist;
+  if (typeof artist === "string") return artist.trim();
+  return artist?.name?.trim() ?? "";
 }
 
 export async function fetchLastFmArtistGenres(artist: string): Promise<string[]> {
@@ -123,6 +147,67 @@ export async function fetchLastFmArtistGenres(artist: string): Promise<string[]>
     return genres;
   } catch (err) {
     console.error("[lastfm] Request error:", err);
+    return [];
+  }
+}
+
+export async function fetchLastFmSimilarTracks(
+  trackName: string,
+  artistName: string,
+  limit = 20
+): Promise<LastFmSimilarTrack[]> {
+  const apiKey = getApiKey();
+  const track = trackName.trim();
+  const artist = primaryArtist(artistName).trim();
+
+  if (!apiKey) {
+    console.warn("[lastfm] LASTFM_API_KEY is not set");
+    return [];
+  }
+  if (!track || !artist) return [];
+
+  const url = `${API_BASE}?${new URLSearchParams({
+    method: "track.getsimilar",
+    track,
+    artist,
+    api_key: apiKey,
+    format: "json",
+    limit: String(limit),
+  }).toString()}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      console.warn("[lastfm] track.getsimilar failed:", { status: res.status, track, artist });
+      return [];
+    }
+
+    const data = (await res.json()) as LastFmTrackGetSimilarResponse;
+    if (data.error) {
+      console.warn("[lastfm] track.getsimilar API error:", { track, artist, message: data.message });
+      return [];
+    }
+
+    const raw = data.similartracks?.track;
+    if (!raw) return [];
+
+    const items = Array.isArray(raw) ? raw : [raw];
+    const results: LastFmSimilarTrack[] = [];
+
+    for (const item of items) {
+      const name = item.name?.trim();
+      const itemArtist = similarTrackArtist(item);
+      if (!name || !itemArtist) continue;
+      results.push({ name, artist: itemArtist });
+    }
+
+    return results;
+  } catch (err) {
+    console.error("[lastfm] track.getsimilar error:", err);
     return [];
   }
 }

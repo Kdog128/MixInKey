@@ -342,6 +342,8 @@ export default function Home() {
                 <CompatibilityCard
                   featuresA={analysis.featuresA!}
                   featuresB={analysis.featuresB!}
+                  trackAId={trackA.id}
+                  trackBId={trackB.id}
                   onAddToSetA={() => handleAddToSet("A")}
                   onAddToSetB={() => handleAddToSet("B")}
                 />
