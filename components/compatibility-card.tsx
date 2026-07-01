@@ -38,6 +38,7 @@ import {
   Loader2,
   ArrowRight,
   Dices,
+  Sparkles,
 } from "lucide-react";
 
 export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
@@ -59,6 +60,8 @@ interface CompatibilityCardProps {
   featuresB: TrackFeatures;
   trackAId?: string;
   trackBId?: string;
+  trackBName?: string;
+  trackBArtist?: string;
   onAddToSetA?: () => void;
   onAddToSetB?: () => void;
 }
@@ -80,6 +83,79 @@ interface BridgeTracksResponse {
 }
 
 const bridgeFetchInflight = new Map<string, Promise<BridgeTracksResponse>>();
+
+interface NextTrackResult {
+  spotify_id: string;
+  name: string;
+  artist: string;
+  image: string | null;
+  bpm: number | null;
+  camelot: string;
+  compatibility: KeyCompatibility;
+}
+
+interface NextTrackResponse {
+  tracks: NextTrackResult[];
+}
+
+const nextTrackFetchInflight = new Map<string, Promise<NextTrackResponse>>();
+
+function isNextTrackCompatType(type: KeyCompatibility["type"] | undefined): boolean {
+  return (
+    type === "compatible" ||
+    type === "perfect" ||
+    type === "relative" ||
+    type === "energy_boost" ||
+    type === "energy_drop"
+  );
+}
+
+async function fetchNextTracksOnce(
+  requestKey: string,
+  body: {
+    track2: {
+      spotify_id: string;
+      camelot: string;
+      bpm: number;
+      name: string;
+      artist: string;
+    };
+  },
+  options?: { bust?: boolean }
+): Promise<NextTrackResponse> {
+  const bust = options?.bust ?? false;
+
+  if (!bust) {
+    const existing = nextTrackFetchInflight.get(requestKey);
+    if (existing) return existing;
+  }
+
+  const promise = (async () => {
+    const url = bust
+      ? "/api/recommendations/next-track?bust=1"
+      : "/api/recommendations/next-track";
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) throw new Error("Next track request failed");
+
+    const data = (await res.json()) as NextTrackResponse;
+    return { tracks: data.tracks ?? [] };
+  })();
+
+  if (bust) return promise;
+
+  nextTrackFetchInflight.set(requestKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    nextTrackFetchInflight.delete(requestKey);
+  }
+}
 
 async function fetchBridgeTracksOnce(
   requestKey: string,
@@ -485,6 +561,176 @@ function BridgeTracksSection({
   );
 }
 
+function NextTrackCard({ track }: { track: NextTrackResult }) {
+  const camelotKey = parseMusicalKeyString(track.camelot);
+  const camelotStyle = camelotKey ? getKeyCompatStyle("compatible") : null;
+  const compatStyle = getKeyCompatStyle(track.compatibility.type);
+
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-border/50 bg-background/30 p-3">
+      <div className="size-12 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+        {track.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={track.image} alt="" className="size-full object-cover" />
+        ) : (
+          <div className="size-full bg-muted" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{track.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {track.bpm != null && (
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {track.bpm} BPM
+            </span>
+          )}
+          {camelotKey && camelotStyle && (
+            <span
+              className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold font-mono"
+              style={{
+                color: camelotStyle.color,
+                backgroundColor: camelotStyle.bg,
+                borderColor: camelotStyle.border,
+              }}
+            >
+              {track.camelot}
+            </span>
+          )}
+        </div>
+        <span
+          className="inline-flex w-fit items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-tight"
+          style={{
+            color: compatStyle.color,
+            backgroundColor: compatStyle.bg,
+            borderColor: compatStyle.border,
+          }}
+        >
+          Track 2: {track.compatibility.label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function NextTrackSection({
+  trackBId,
+  trackBName,
+  trackBArtist,
+  camelotB,
+  bpmB,
+}: {
+  trackBId: string;
+  trackBName?: string;
+  trackBArtist?: string;
+  camelotB: CamelotKey;
+  bpmB: number | null;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [tracks, setTracks] = useState<NextTrackResult[]>([]);
+
+  const requestKey = `${trackBId}:${camelotB.label}:${bpmB ?? 0}:${trackBName ?? ""}:${trackBArtist ?? ""}`;
+  const requestBody = {
+    track2: {
+      spotify_id: trackBId,
+      camelot: camelotB.label,
+      bpm: bpmB ?? 0,
+      name: trackBName ?? "",
+      artist: trackBArtist ?? "",
+    },
+  };
+
+  async function loadNextTracks(bust = false) {
+    setLoading(true);
+    try {
+      const results = await fetchNextTracksOnce(requestKey, requestBody, { bust });
+      setTracks(results.tracks);
+    } catch {
+      setTracks([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleReroll() {
+    void loadNextTracks(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInitialNextTracks() {
+      setLoading(true);
+      try {
+        const results = await fetchNextTracksOnce(requestKey, requestBody);
+        if (cancelled) return;
+        setTracks(results.tracks);
+      } catch {
+        if (!cancelled) setTracks([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadInitialNextTracks();
+    return () => {
+      cancelled = true;
+    };
+  }, [trackBId, camelotB.label, bpmB, trackBName, trackBArtist]);
+
+  return (
+    <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-3")} style={cohesiveSurfaceStyle()}>
+      <div className="flex items-start gap-2.5">
+        <Sparkles className="size-5 text-[#a855f7] flex-shrink-0 mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold tracking-wide text-foreground">What&apos;s Next</h3>
+            <span className="group/next-reroll relative ml-auto inline-flex">
+              <button
+                type="button"
+                onClick={handleReroll}
+                disabled={loading}
+                aria-label="Get different suggestions"
+                className="inline-flex rounded-md p-1.5 text-muted-foreground transition-[color,filter] hover:text-white hover:drop-shadow-[0_0_8px_rgba(168,85,247,0.85)] disabled:pointer-events-none disabled:opacity-40 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a855f7]/50"
+              >
+                <Dices className="size-5" aria-hidden="true" />
+              </button>
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute top-[calc(100%+6px)] right-0 z-50 w-max rounded-md border border-border bg-popover px-2.5 py-1.5 text-[11px] text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 group-hover/next-reroll:visible group-hover/next-reroll:opacity-100"
+              >
+                Get different suggestions
+              </span>
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground/80 mt-0.5 leading-snug">
+            Tracks that flow well after Track 2
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+          <Loader2 className="size-4 animate-spin text-[#a855f7]" />
+          Finding next tracks…
+        </div>
+      ) : tracks.length === 0 ? (
+        <p className="text-xs text-muted-foreground/70 text-center py-4">
+          No suggestions found
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {tracks.map((track) => (
+            <NextTrackCard key={track.spotify_id} track={track} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function getScoreStyle(score: number): { color: string; label: string } {
   if (score >= 90) {
     return { color: "#15803d", label: "Highly Compatible" };
@@ -719,6 +965,8 @@ export function CompatibilityCard({
   featuresB,
   trackAId,
   trackBId,
+  trackBName,
+  trackBArtist,
   onAddToSetA,
   onAddToSetB,
 }: CompatibilityCardProps) {
@@ -993,6 +1241,18 @@ export function CompatibilityCard({
             camelotA={camelotA}
             camelotB={camelotB}
             bpmA={featuresA.bpm}
+            bpmB={featuresB.bpm}
+          />
+        )}
+
+      {isNextTrackCompatType(keyCompat?.type) &&
+        camelotB &&
+        trackBId && (
+          <NextTrackSection
+            trackBId={trackBId}
+            trackBName={trackBName}
+            trackBArtist={trackBArtist}
+            camelotB={camelotB}
             bpmB={featuresB.bpm}
           />
         )}
