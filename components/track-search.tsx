@@ -11,6 +11,7 @@ import { isFavorite, toggleFavorite, getFavorites, enrichFavoritesWithImages } f
 
 export interface TrackResult {
   id: string;
+  spotify_id?: string | null;
   name: string;
   artist: string;
   artist_id: string | null;
@@ -391,12 +392,22 @@ export function TrackSearch({
               </div>
             )}
             <div className="min-w-0 flex-1 overflow-hidden py-0.5">
-              <p
-                className="truncate text-sm font-semibold leading-snug text-foreground"
-                title={selectedTrack.name}
-              >
-                {selectedTrack.name}
-              </p>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p
+                  className="min-w-0 truncate text-sm font-semibold leading-snug text-foreground"
+                  title={selectedTrack.name}
+                >
+                  {selectedTrack.name}
+                </p>
+                {selectedTrack.spotify_id === null && (
+                  <span
+                    className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground/70 ring-1 ring-border/60"
+                    title="Selected from iTunes — BPM may resolve after Spotify lookup"
+                  >
+                    iTunes
+                  </span>
+                )}
+              </div>
               <p
                 className="truncate text-xs leading-snug text-muted-foreground"
                 title={selectedTrack.artist}

@@ -22,6 +22,7 @@ export interface TrackFeatures {
 
 interface ClientTrackInput {
   id: string;
+  spotify_id?: string | null;
   name?: string;
   artist?: string;
   image?: string | null;
@@ -40,6 +41,68 @@ interface SpotifyTrackObject {
   explicit: boolean;
   album: { release_date: string };
   artists: Array<{ id: string }>;
+}
+
+function needsSpotifyIdResolution(track: ClientTrackInput): boolean {
+  if (track.spotify_id !== null) return false;
+  return Boolean(track.name?.trim() && track.artist?.trim());
+}
+
+async function searchSpotifyTrackId(
+  artist: string,
+  name: string,
+  headers: Record<string, string>
+): Promise<string | null> {
+  const market = process.env.SPOTIFY_MARKET ?? "US";
+  const query = `${artist} ${name}`.trim();
+  const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1&market=${encodeURIComponent(market)}`;
+
+  const res = await fetch(url, { headers, cache: "no-store" });
+
+  if (res.status === 429) {
+    console.warn("[spotify/features] Skipping Spotify ID resolution due to 429");
+    return null;
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.warn("[spotify/features] Spotify ID resolution search failed:", {
+      status: res.status,
+      body,
+    });
+    return null;
+  }
+
+  const data = (await res.json()) as { tracks?: { items?: Array<{ id: string }> } };
+  return data.tracks?.items?.[0]?.id ?? null;
+}
+
+async function resolveTracksWithSpotifyIds(
+  tracks: ClientTrackInput[],
+  headers: Record<string, string>
+): Promise<ClientTrackInput[]> {
+  return Promise.all(
+    tracks.map(async (track) => {
+      if (!needsSpotifyIdResolution(track)) {
+        const spotifyId =
+          typeof track.spotify_id === "string" && track.spotify_id.trim()
+            ? track.spotify_id.trim()
+            : track.id?.trim() || "";
+        return spotifyId ? { ...track, id: spotifyId } : track;
+      }
+
+      const artist = track.artist!.trim();
+      const name = track.name!.trim();
+      const resolvedId = await searchSpotifyTrackId(artist, name, headers);
+
+      if (!resolvedId) {
+        return track;
+      }
+
+      console.log("[spotify/features] Resolved Spotify ID:", { artist, name, resolvedId });
+      return { ...track, id: resolvedId, spotify_id: resolvedId };
+    })
+  );
 }
 
 async function fetchArtistGenres(
@@ -193,9 +256,10 @@ async function resolveTrackFeatures(
   partial: boolean;
   message?: string;
 }> {
-  const spotifyPromise = resolveSpotifyFeatures(tracks, headers);
+  const resolvedTracks = await resolveTracksWithSpotifyIds(tracks, headers);
+  const spotifyPromise = resolveSpotifyFeatures(resolvedTracks, headers);
   const audioPromise = fetchTracksAudioAnalysis(
-    tracks.map((t) => ({
+    resolvedTracks.map((t) => ({
       artist: t.artist ?? "",
       title: t.name ?? "",
       duration_ms: t.duration_ms,
@@ -230,9 +294,9 @@ async function resolveTrackFeatures(
     });
   }
 
-  const spotify = spotifyFeatures ?? fallbackSpotifyFeatures(tracks);
+  const spotify = spotifyFeatures ?? fallbackSpotifyFeatures(resolvedTracks);
   const audio = audioResults ?? tracks.map(() => emptyAudioAnalysis());
-  const features = mergeTrackFeatures(tracks, spotify, audio);
+  const features = mergeTrackFeatures(resolvedTracks, spotify, audio);
 
   if (audioTimedOut) {
     return {
