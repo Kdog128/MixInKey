@@ -11,13 +11,17 @@ import {
   getPopularityCompatibility,
   getReleaseDateCompatibility,
   getMixingTip,
-  getOverallCompatibilityFromAvailableFactors,
   COMPATIBILITY_FACTOR_TOTAL,
   getStatBadgeStyle,
   parseMusicalKeyString,
   type KeyCompatibility,
   type KeyCompatStyle,
 } from "@/lib/camelot";
+import {
+  computeOverallCompatibility,
+  getCompatibilityScoreStyle,
+  resolveCamelotKey,
+} from "@/lib/compatibility-score";
 import { CamelotWheel } from "@/components/camelot-wheel";
 import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import { COHESIVE_INNER_CARD_CLASS, cohesiveSurfaceStyle } from "@/lib/ui-surfaces";
@@ -639,33 +643,7 @@ function NextTrackSection({
 }
 
 function getScoreStyle(score: number): { color: string; label: string } {
-  if (score >= 90) {
-    return { color: "#15803d", label: "Highly Compatible" };
-  }
-  if (score >= 70) {
-    return { color: "#22c55e", label: "Compatible" };
-  }
-  if (score >= 50) {
-    return { color: "#eab308", label: "Moderate" };
-  }
-  if (score >= 30) {
-    return { color: "#f97316", label: "Borderline" };
-  }
-  return { color: "#ef4444", label: "Incompatible" };
-}
-
-function resolveCamelotKey(camelot: CamelotKey | null | undefined): CamelotKey | null {
-  if (!camelot) return null;
-  if (
-    typeof camelot.number === "number" &&
-    (camelot.letter === "A" || camelot.letter === "B") &&
-    camelot.label
-  ) {
-    return camelot;
-  }
-  if (camelot.label) return parseMusicalKeyString(camelot.label);
-  if (camelot.musicalKey) return parseMusicalKeyString(camelot.musicalKey);
-  return null;
+  return getCompatibilityScoreStyle(score);
 }
 
 function getDefaultBadgeLabel(score: number): string {
@@ -954,14 +932,7 @@ export function CompatibilityCard({
     : null;
 
   const overall = hasCoreAnalysis && bpmScore != null && keyCompat
-    ? getOverallCompatibilityFromAvailableFactors({
-        keyScore: keyCompat.score,
-        bpmScore,
-        popularityScore: popScore,
-        durationScore: durScore,
-        genreScore,
-        releaseScore,
-      })
+    ? computeOverallCompatibility(featuresA, featuresB)
     : null;
 
   function formatDuration(ms: number) {

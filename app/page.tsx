@@ -16,6 +16,8 @@ import {
   cohesiveCardStyle,
 } from "@/lib/ui-surfaces";
 import { COMPATIBILITY_NAV_RESET_EVENT } from "@/lib/compatibility-nav-reset";
+import { metadataToTrackResult } from "@/lib/compatibility-pair";
+import { computeOverallCompatibility } from "@/lib/compatibility-score";
 import { analyzeTrackWithEssentia } from "@/lib/essentia-client";
 import {
   DEFAULT_EXAMPLE_ARTIST_PAIR,
@@ -104,10 +106,12 @@ export default function Home() {
   const [audioAnalyzingB, setAudioAnalyzingB] = useState(false);
   const scrollAnchorYRef = useRef<number | null>(null);
   const analysisGenRef = useRef(0);
+  const historyWrittenRef = useRef<string | null>(null);
   const documentVisible = useDocumentVisible();
 
   const resetCompatibilityPage = useCallback(() => {
     analysisGenRef.current += 1;
+    historyWrittenRef.current = null;
     setTrackA(null);
     setTrackB(null);
     setAnalysis(emptyAnalysis);
@@ -116,6 +120,9 @@ export default function Home() {
     setSearchResetKey((key) => key + 1);
     setAudioAnalyzingA(false);
     setAudioAnalyzingB(false);
+    if (typeof window !== "undefined" && window.location.search) {
+      window.history.replaceState({}, "", "/");
+    }
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
@@ -172,12 +179,32 @@ export default function Home() {
 
   const analyze = useCallback(async (a: TrackResult, b: TrackResult) => {
     const gen = ++analysisGenRef.current;
+    const comparisonKey = `${gen}:${[a.id, b.id].sort().join(":")}`;
     setAudioAnalyzingA(false);
     setAudioAnalyzingB(false);
     setAnalysis((prev) => ({ ...prev, loading: true, error: null }));
 
     let requestSeq = 0;
     let appliedSeq = 0;
+
+    function commitHistory(fA: TrackFeatures, fB: TrackFeatures) {
+      if (gen !== analysisGenRef.current) return;
+      if (historyWrittenRef.current === comparisonKey) return;
+      const overall = computeOverallCompatibility(fA, fB);
+      if (!overall) return;
+      historyWrittenRef.current = comparisonKey;
+      void fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          track1_spotify_id: a.id,
+          track2_spotify_id: b.id,
+          score: overall.score,
+        }),
+      }).catch((err) => {
+        console.warn("[history] Failed to save comparison:", err);
+      });
+    }
 
     async function fetchFeatures() {
       const seq = ++requestSeq;
@@ -255,12 +282,19 @@ export default function Home() {
       runBackgroundAnalysis(a, fA, setAudioAnalyzingA);
       runBackgroundAnalysis(b, fB, setAudioAnalyzingB);
 
-      if (pending.length === 0) return;
+      if (pending.length === 0) {
+        commitHistory(fA, fB);
+        return;
+      }
 
       void Promise.all(pending).then(async () => {
         if (gen !== analysisGenRef.current) return;
         const refreshed = await fetchFeatures();
         applyFeatures(refreshed.seq, refreshed.features[0], refreshed.features[1]);
+        commitHistory(
+          keepResolvedCore(fA, refreshed.features[0]),
+          keepResolvedCore(fB, refreshed.features[1])
+        );
       });
     } catch (err) {
       if (gen !== analysisGenRef.current) return;
@@ -273,6 +307,56 @@ export default function Home() {
       }));
     }
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const a = params.get("a")?.trim();
+    const b = params.get("b")?.trim();
+    if (!a || !b || a === b) return;
+
+    const trackAId = a;
+    const trackBId = b;
+    let cancelled = false;
+    const gen = analysisGenRef.current;
+
+    async function loadPairFromUrl() {
+      try {
+        const res = await fetch("/api/tracks/metadata", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spotify_ids: [trackAId, trackBId] }),
+        });
+        const data = (await res.json()) as {
+          tracks?: Record<
+            string,
+            {
+              name?: string;
+              artist?: string;
+              album?: string;
+              image?: string | null;
+              duration_ms?: number;
+            }
+          >;
+        };
+        if (cancelled || gen !== analysisGenRef.current) return;
+        const metaA = data.tracks?.[trackAId];
+        const metaB = data.tracks?.[trackBId];
+        if (!metaA || !metaB) return;
+        const nextA = metadataToTrackResult(trackAId, metaA);
+        const nextB = metadataToTrackResult(trackBId, metaB);
+        setTrackA(nextA);
+        setTrackB(nextB);
+        void analyze(nextA, nextB);
+      } catch (err) {
+        console.warn("[compatibility] Failed to load pair from URL:", err);
+      }
+    }
+
+    void loadPairFromUrl();
+    return () => {
+      cancelled = true;
+    };
+  }, [analyze]);
 
   function handleSelectA(track: TrackResult) {
     if (!trackB) scrollAnchorYRef.current = window.scrollY;
@@ -290,6 +374,7 @@ export default function Home() {
 
   function handleClearA() {
     analysisGenRef.current += 1;
+    historyWrittenRef.current = null;
     setAudioAnalyzingA(false);
     setAudioAnalyzingB(false);
     setTrackA(null);
@@ -298,6 +383,7 @@ export default function Home() {
 
   function handleClearB() {
     analysisGenRef.current += 1;
+    historyWrittenRef.current = null;
     setAudioAnalyzingA(false);
     setAudioAnalyzingB(false);
     setTrackB(null);
