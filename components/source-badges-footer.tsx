@@ -4,19 +4,22 @@ import { cn } from "@/lib/utils";
 const SOURCE_FOOTER_FONT_CLASS = "font-sans";
 
 const SOURCE_BADGE_STYLES = {
-  spotify: "border-emerald-500/35 bg-emerald-500/10 text-emerald-400",
-  reccobeats: "border-[#a855f7]/35 bg-[#a855f7]/10 text-[#c084fc]",
+  spotify: "border-[#1DB954]/40 bg-[#1DB954]/12 text-[#1DB954]",
+  deezer: "border-[#ff0092]/45 bg-[#ff0092]/14 text-[#ff4db8]",
+  reccobeats: "border-[#00C7F2]/40 bg-[#00C7F2]/12 text-[#5DDBF7]",
   soundnet: "border-blue-500/35 bg-blue-500/10 text-blue-400",
   getsongbpm: "border-amber-500/35 bg-amber-500/10 text-amber-400",
-  lastfm: "border-red-500/35 bg-red-500/10 text-red-400",
+  lastfm: "border-[#D51007]/45 bg-[#D51007]/14 text-[#FF6B63]",
 } as const;
 
-type SourceTooltipAccent = "green" | "blue" | "red";
+type SourceTooltipAccent = "spotify" | "deezer" | "cyan" | "blue" | "lastfm";
 
 const SOURCE_TOOLTIP_ACCENT_STYLES: Record<SourceTooltipAccent, string> = {
-  green: "border-emerald-500/50 bg-emerald-950 text-emerald-400",
+  spotify: "border-[#1DB954]/50 bg-[#052e16] text-[#1DB954]",
+  deezer: "border-[#ff0092]/50 bg-[#3b0624] text-[#ff4db8]",
+  cyan: "border-[#00C7F2]/50 bg-[#042a33] text-[#5DDBF7]",
   blue: "border-blue-500/50 bg-blue-950 text-blue-400",
-  red: "border-red-500/50 bg-red-950 text-red-400",
+  lastfm: "border-[#D51007]/50 bg-[#3b0705] text-[#FF6B63]",
 };
 
 const SOURCE_TOOLTIP_SHADOW =
@@ -33,7 +36,7 @@ function SourceBadge({
     <span
       className={cn(
         SOURCE_FOOTER_FONT_CLASS,
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-normal whitespace-nowrap",
+        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-normal whitespace-nowrap",
         badgeStyle
       )}
     >
@@ -89,7 +92,7 @@ function SourceBadgeHoverGroup({
 }) {
   return (
     <div
-      className="group/badge relative inline-flex min-w-0 max-w-full items-center"
+      className="group/badge relative inline-flex shrink-0 items-center"
       tabIndex={0}
       aria-describedby={tooltipId}
     >
@@ -108,16 +111,23 @@ export function SourceBadgesFooter() {
       )}
     >
       <p className="mb-2.5 text-center text-[10px] text-zinc-400/90">
-        Next.js · Spotify API · Supabase
+        Next.js · Spotify API · Supabase · Essentia.js
       </p>
       <div className="flex min-h-[1.75rem] w-full min-w-0 max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-1.5 text-center text-xs leading-normal">
-        <span className="text-zinc-400/90">Live APIs</span>
-        <SourceBadgeHoverGroup tooltipLabel="Tracks" accent="green" tooltipId="source-tooltip-tracks">
+        <span className="shrink-0 text-zinc-400/90">Live APIs</span>
+        <SourceBadgeHoverGroup tooltipLabel="Tracks" accent="spotify" tooltipId="source-tooltip-tracks">
           <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.spotify}>Spotify</SourceBadge>
         </SourceBadgeHoverGroup>
         <SourceBadgeHoverGroup
+          tooltipLabel="Preview Audio"
+          accent="deezer"
+          tooltipId="source-tooltip-preview-deezer"
+        >
+          <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.deezer}>Deezer</SourceBadge>
+        </SourceBadgeHoverGroup>
+        <SourceBadgeHoverGroup
           tooltipLabel="BPM & Key"
-          accent="blue"
+          accent="cyan"
           tooltipId="source-tooltip-bpm-key-reccobeats"
         >
           <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.reccobeats}>ReccoBeats</SourceBadge>
@@ -136,7 +146,7 @@ export function SourceBadgesFooter() {
         >
           <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.getsongbpm}>GetSongBPM</SourceBadge>
         </SourceBadgeHoverGroup>
-        <SourceBadgeHoverGroup tooltipLabel="Genres" accent="red" tooltipId="source-tooltip-genres">
+        <SourceBadgeHoverGroup tooltipLabel="Genres" accent="lastfm" tooltipId="source-tooltip-genres">
           <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.lastfm}>Last.fm</SourceBadge>
         </SourceBadgeHoverGroup>
       </div>
