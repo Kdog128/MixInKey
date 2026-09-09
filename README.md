@@ -1,33 +1,22 @@
-# v0-dj-track-compatibility-tool
+# MixInKey
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
+Harmonic mix planning for DJs — Camelot compatibility, multi-hop bridge paths, and BPM/key analysis.
 
-## Built with v0
+Live at [mixinkey.vercel.app](https://mixinkey.vercel.app)
 
-This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
+## Features
 
-[Continue working on v0 →](https://v0.app/chat/projects/prj_arkmgy3BpJlSA12lng0Yaz4DtuM3)
+- **Compatibility** — scores two tracks on Camelot key, BPM, and whatever metadata is available (popularity, duration, genres, release date). No score until both tracks have BPM and key.
+- **Camelot wheel** — visual key relationship between the pair.
+- **Bridge paths** — when keys do not mix directly, search `tracks_cache` for intermediate tracks within a BPM window.
+- **Set planner** — ordered setlist with mix labels between adjacent tracks, plus a recommended next track from the cache (Camelot, BPM, genre overlap, release-year proximity).
 
-## Getting Started
+## Architecture
 
-First, run the development server:
+- Next.js 16 / Supabase / Vercel.
+- Six-provider fallback chain with read-through caching and negative caching: ReccoBeats → GetSongBPM → SoundNet → MusicBrainz for BPM/key, Last.fm for genres, Deezer for preview audio. Hits and misses land in `tracks_cache`.
+- Client-side BPM and key detection via Essentia.js (WASM) in a Web Worker when no provider has the track. WASM is not on the server 6s features path.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-```
+## Notes
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-## Learn More
-
-To learn more, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+Spotify deprecated third-party access to `/v1/audio-features`, so MixInKey cannot read BPM or key from Spotify. External providers are incomplete and rate-limited; the Deezer preview + Essentia path exists for tracks those APIs do not cover. Essentia is local analysis of a 30-second preview, not a substitute for a full-file key/BPM scan.
