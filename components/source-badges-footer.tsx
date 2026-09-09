@@ -89,7 +89,7 @@ function SourceBadgeHoverGroup({
 }) {
   return (
     <div
-      className="group/badge relative inline-flex items-center"
+      className="group/badge relative inline-flex min-w-0 max-w-full items-center"
       tabIndex={0}
       aria-describedby={tooltipId}
     >
@@ -104,33 +104,41 @@ export function SourceBadgesFooter() {
     <footer
       className={cn(
         SOURCE_FOOTER_FONT_CLASS,
-        "relative z-30 shrink-0 overflow-visible"
+        "relative z-30 w-full min-w-0 max-w-full shrink-0 overflow-visible"
       )}
     >
       <p className="mb-2.5 text-center text-[10px] text-zinc-400/90">
         Next.js · Spotify API · Supabase
       </p>
-      <div className="flex min-h-[1.75rem] flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-center text-xs leading-normal">
-        <span className="inline-flex items-center gap-2">
-          <span className="text-zinc-400/90">Live APIs</span>
-          <SourceBadgeHoverGroup tooltipLabel="Tracks" accent="green" tooltipId="source-tooltip-tracks">
-            <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.spotify}>Spotify</SourceBadge>
-          </SourceBadgeHoverGroup>
-          <SourceBadgeHoverGroup
-            tooltipLabel="BPM & Key"
-            accent="blue"
-            tooltipId="source-tooltip-bpm-key"
-          >
-            <span className="inline-flex items-center gap-1">
-              <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.reccobeats}>ReccoBeats</SourceBadge>
-              <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.soundnet}>SoundNet</SourceBadge>
-              <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.getsongbpm}>GetSongBPM</SourceBadge>
-            </span>
-          </SourceBadgeHoverGroup>
-          <SourceBadgeHoverGroup tooltipLabel="Genres" accent="red" tooltipId="source-tooltip-genres">
-            <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.lastfm}>Last.fm</SourceBadge>
-          </SourceBadgeHoverGroup>
-        </span>
+      <div className="flex min-h-[1.75rem] w-full min-w-0 max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-1.5 text-center text-xs leading-normal">
+        <span className="text-zinc-400/90">Live APIs</span>
+        <SourceBadgeHoverGroup tooltipLabel="Tracks" accent="green" tooltipId="source-tooltip-tracks">
+          <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.spotify}>Spotify</SourceBadge>
+        </SourceBadgeHoverGroup>
+        <SourceBadgeHoverGroup
+          tooltipLabel="BPM & Key"
+          accent="blue"
+          tooltipId="source-tooltip-bpm-key-reccobeats"
+        >
+          <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.reccobeats}>ReccoBeats</SourceBadge>
+        </SourceBadgeHoverGroup>
+        <SourceBadgeHoverGroup
+          tooltipLabel="BPM & Key"
+          accent="blue"
+          tooltipId="source-tooltip-bpm-key-soundnet"
+        >
+          <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.soundnet}>SoundNet</SourceBadge>
+        </SourceBadgeHoverGroup>
+        <SourceBadgeHoverGroup
+          tooltipLabel="BPM & Key"
+          accent="blue"
+          tooltipId="source-tooltip-bpm-key-getsongbpm"
+        >
+          <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.getsongbpm}>GetSongBPM</SourceBadge>
+        </SourceBadgeHoverGroup>
+        <SourceBadgeHoverGroup tooltipLabel="Genres" accent="red" tooltipId="source-tooltip-genres">
+          <SourceBadge badgeStyle={SOURCE_BADGE_STYLES.lastfm}>Last.fm</SourceBadge>
+        </SourceBadgeHoverGroup>
       </div>
     </footer>
   );

@@ -31,12 +31,12 @@ export const COHESIVE_PANEL_CLASS = COHESIVE_SURFACE_CLASS;
 
 /** Standard page card / section container. */
 export const COHESIVE_CARD_CLASS = cn(
-  "rounded-2xl border border-border backdrop-blur-sm"
+  "min-w-0 max-w-full rounded-2xl border border-border backdrop-blur-sm"
 );
 
 /** App page layout — content column below sidebar. */
 export const PAGE_CONTENT_CLASS =
-  "relative z-10 mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-8 px-4 py-12";
+  "relative z-10 mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-8 overflow-x-clip px-4 py-12";
 
 /** Primary section card padding (Set Planner, Favorites, etc.). */
 export const PAGE_SECTION_CARD_CLASS = cn(COHESIVE_CARD_CLASS, "p-5 md:p-6");

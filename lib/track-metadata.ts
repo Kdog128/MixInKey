@@ -32,21 +32,33 @@ async function fetchSpotifyTracksByIds(
     const token = await getSpotifyToken();
     const headers = { Authorization: `Bearer ${token}` };
 
-    for (let i = 0; i < ids.length; i += 50) {
-      const batch = ids.slice(i, i + 50);
-      const url = `https://api.spotify.com/v1/tracks?ids=${batch.map(encodeURIComponent).join(",")}`;
-      const res = await fetch(url, { headers, cache: "no-store" });
+    const tracks = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const res = await fetch(
+            `https://api.spotify.com/v1/tracks/${encodeURIComponent(id)}`,
+            { headers, cache: "no-store" }
+          );
 
-      if (!res.ok) {
-        console.warn("[track-metadata] Spotify tracks fetch failed:", res.status);
-        continue;
-      }
+          if (!res.ok) {
+            console.warn("[track-metadata] Spotify track fetch failed:", {
+              id,
+              status: res.status,
+            });
+            return null;
+          }
 
-      const data = (await res.json()) as { tracks: Array<SpotifyApiTrack | null> };
-      for (const track of data.tracks ?? []) {
-        if (track?.id) {
-          result.set(track.id, mapSpotifyTrack(track));
+          return (await res.json()) as SpotifyApiTrack;
+        } catch (err) {
+          console.warn("[track-metadata] Spotify track fetch error:", { id, err });
+          return null;
         }
+      })
+    );
+
+    for (const track of tracks) {
+      if (track?.id) {
+        result.set(track.id, mapSpotifyTrack(track));
       }
     }
   } catch (err) {

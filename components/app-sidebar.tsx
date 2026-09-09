@@ -4,9 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MixInKeyLogo } from "@/components/mixinkey-logo";
 import { GradientFlowIcon } from "@/components/gradient-flow-icon";
-import type { GradientFlowIconName } from "@/lib/gradient-flow-masks";
-import { dispatchCompatibilityNavReset } from "@/lib/compatibility-nav-reset";
-import { normalizePathname, resolveNavPathname } from "@/lib/nav-active";
+import {
+  getActiveNavHref,
+  handleNavClick,
+  NAV_ITEMS,
+} from "@/lib/nav-items";
+import { resolveNavPathname } from "@/lib/nav-active";
 import { COHESIVE_PANEL_CLASS } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
 
@@ -22,64 +25,11 @@ const NAV_ICON_ACTIVE_CLASS = cn(
 const NAV_ICON_INACTIVE_CLASS =
   "border-transparent bg-transparent group-hover/sidebar:group-hover/nav:border-[#a855f7]/20 group-hover/sidebar:group-hover/nav:bg-[#a855f7]/10";
 
-const navItems = [
-  {
-    href: "/",
-    label: "Compatibility",
-    icon: "disc-3" as GradientFlowIconName,
-    match: (path: string) => path === "/",
-  },
-  {
-    href: "/setlist",
-    label: "Set Planner",
-    icon: "list-music" as GradientFlowIconName,
-    match: (path: string) => path.startsWith("/setlist"),
-  },
-  {
-    href: "/favorites",
-    label: "Favorites",
-    icon: "heart" as GradientFlowIconName,
-    match: (path: string) => path.startsWith("/favorites"),
-  },
-  {
-    href: "/recommendations",
-    label: "Recommendations",
-    icon: "sparkles" as GradientFlowIconName,
-    match: (path: string) => path.startsWith("/recommendations"),
-  },
-  {
-    href: "/history",
-    label: "History",
-    icon: "clock" as GradientFlowIconName,
-    match: (path: string) => path.startsWith("/history"),
-  },
-] as const;
-
 const labelRevealClass =
   "max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity] duration-300 ease-in-out group-hover/sidebar:max-w-full group-hover/sidebar:flex-1 group-hover/sidebar:overflow-visible group-hover/sidebar:opacity-100";
 
 const logoWordmarkRevealClass =
   "max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity] duration-300 ease-in-out group-hover/sidebar:max-w-[5.75rem] group-hover/sidebar:overflow-visible group-hover/sidebar:opacity-100";
-
-function getActiveNavHref(pathname: string): string | null {
-  const path = normalizePathname(pathname);
-  let best: (typeof navItems)[number] | null = null;
-
-  for (const item of navItems) {
-    if (!item.match(path)) continue;
-    if (!best || item.href.length > best.href.length) {
-      best = item;
-    }
-  }
-
-  return best?.href ?? null;
-}
-
-function handleNavClick(href: string, pathname: string) {
-  if (href === "/" && normalizePathname(pathname) === "/") {
-    dispatchCompatibilityNavReset();
-  }
-}
 
 interface AppSidebarProps {
   initialPathname: string;
@@ -93,7 +43,7 @@ export function AppSidebar({ initialPathname }: AppSidebarProps) {
   return (
     <aside
       className={cn(
-        "app-sidebar group/sidebar fixed left-0 top-0 z-30 flex h-screen w-16 flex-col overflow-hidden",
+        "app-sidebar group/sidebar fixed left-0 top-0 z-30 hidden h-screen w-16 flex-col overflow-hidden md:flex",
         "border-r border-transparent bg-transparent",
         "transition-[width,background-color,border-color,box-shadow] duration-300 ease-in-out",
         "hover:w-60 hover:border-sidebar-border hover:bg-sidebar hover:shadow-[4px_0_24px_rgba(0,0,0,0.35)]"
@@ -126,7 +76,7 @@ export function AppSidebar({ initialPathname }: AppSidebarProps) {
         </Link>
 
         <nav className="mt-6 flex w-full flex-1 flex-col gap-1 overflow-y-auto overflow-x-clip group-hover/sidebar:overflow-x-visible">
-          {navItems.map(({ href, label, icon }) => {
+          {NAV_ITEMS.map(({ href, label, icon }) => {
             const active = activeHref === href;
 
             return (

@@ -10,6 +10,7 @@ export interface SpotifyTrackResult {
   popularity: number;
   explicit: boolean;
   release_date: string | null;
+  isrc: string | null;
 }
 
 export interface SpotifyApiTrack {
@@ -25,6 +26,7 @@ export interface SpotifyApiTrack {
   };
   preview_url?: string | null;
   duration_ms: number;
+  external_ids?: { isrc?: string | null };
 }
 
 export function mapSpotifyTrack(track: SpotifyApiTrack): SpotifyTrackResult {
@@ -40,5 +42,6 @@ export function mapSpotifyTrack(track: SpotifyApiTrack): SpotifyTrackResult {
     popularity: track.popularity ?? 0,
     explicit: track.explicit ?? false,
     release_date: track.album.release_date ?? null,
+    isrc: track.external_ids?.isrc?.trim() || null,
   };
 }

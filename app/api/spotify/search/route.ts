@@ -13,13 +13,16 @@ interface ITunesSearchResult {
   collectionName: string;
   artworkUrl100?: string;
   trackTimeMillis?: number;
+  isrcCode?: string;
 }
 
 interface ITunesSearchResponse {
   results?: ITunesSearchResult[];
 }
 
-function mapITunesTrack(track: ITunesSearchResult): SpotifyTrackResult & { spotify_id: null } {
+function mapITunesTrack(
+  track: ITunesSearchResult
+): SpotifyTrackResult & { spotify_id: null } {
   return {
     id: String(track.trackId),
     name: track.trackName,
@@ -34,6 +37,7 @@ function mapITunesTrack(track: ITunesSearchResult): SpotifyTrackResult & { spoti
     popularity: 0,
     explicit: false,
     release_date: null,
+    isrc: track.isrcCode?.trim() || null,
     spotify_id: null,
   };
 }
@@ -51,7 +55,13 @@ async function searchITunes(query: string): Promise<SpotifyTrackResult[]> {
   }
 
   const data = (await res.json()) as ITunesSearchResponse;
-  return (data.results ?? []).slice(0, 8).map(mapITunesTrack);
+  const rawResults = (data.results ?? []).slice(0, 8);
+
+  if (rawResults.length > 0) {
+    console.log("[search] iTunes raw track sample:", rawResults[0]);
+  }
+
+  return rawResults.map(mapITunesTrack);
 }
 
 export async function GET(request: NextRequest) {

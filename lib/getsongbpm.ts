@@ -240,14 +240,72 @@ async function searchGetSong(
 export interface GetSongBpmData {
   analysis: AudioAnalysis;
   genres: string[];
+  matched: boolean;
 }
 
-export async function fetchGetSongBpmData(track: GetSongBpmTrackInput): Promise<GetSongBpmData> {
-  const match = await resolveGetSongMatch(track);
-  if (!match) return { analysis: EMPTY, genres: [] };
+function unmatchedGetSongData(): GetSongBpmData {
+  return { analysis: EMPTY, genres: [], matched: false };
+}
 
+function matchToGetSongData(match: GetSongSearchResult | null): GetSongBpmData {
+  if (!match) return unmatchedGetSongData();
   const analysis = resultToAnalysis(match);
-  return { analysis, genres: analysis.genres };
+  return { analysis, genres: analysis.genres, matched: true };
+}
+
+function getLookupContext(
+  track: GetSongBpmTrackInput
+): { apiKey: string; artist: string; title: string } | null {
+  const apiKey = getApiKey();
+  const artist = primaryArtist(track.artist).trim();
+  const title = normalizeTitle(track.title).trim();
+
+  if (!apiKey) {
+    console.warn("[getsongbpm] GETSONGBPM_API_KEY is not set");
+    return null;
+  }
+  if (!artist || !title) return null;
+  return { apiKey, artist, title };
+}
+
+export async function fetchGetSongBpmData(
+  track: GetSongBpmTrackInput,
+  options?: { lookup?: "auto" | "combined" | "title" }
+): Promise<GetSongBpmData> {
+  const ctx = getLookupContext(track);
+  if (!ctx) return unmatchedGetSongData();
+
+  const lookup = options?.lookup ?? "auto";
+
+  try {
+    if (lookup !== "title") {
+      const combinedItems = await searchGetSong(
+        ctx.apiKey,
+        `song:${ctx.title} artist:${ctx.artist}`,
+        "both"
+      );
+      if (combinedItems.length > 0) {
+        return matchToGetSongData(pickBestMatch(combinedItems, ctx.artist, ctx.title));
+      }
+      if (lookup === "combined") return unmatchedGetSongData();
+    }
+
+    console.log("[getsongbpm] Combined lookup empty, using title-only results:", {
+      artist: ctx.artist,
+      title: ctx.title,
+    });
+
+    const titleResults = await searchGetSong(ctx.apiKey, ctx.title, "song");
+    const items = filterByArtist(titleResults, ctx.artist);
+    if (items.length === 0) {
+      console.log("[getsongbpm] No results for:", { artist: ctx.artist, title: ctx.title });
+      return unmatchedGetSongData();
+    }
+    return matchToGetSongData(pickBestMatch(items, ctx.artist, ctx.title));
+  } catch (err) {
+    console.error("[getsongbpm] Request error:", err);
+    return unmatchedGetSongData();
+  }
 }
 
 function hasGetSongAnalysisData(analysis: AudioAnalysis): boolean {
@@ -277,38 +335,3 @@ export async function fetchGetSongBpmGenres(track: GetSongBpmTrackInput): Promis
   return genres;
 }
 
-async function resolveGetSongMatch(track: GetSongBpmTrackInput): Promise<GetSongSearchResult | null> {
-  const apiKey = getApiKey();
-  const artist = primaryArtist(track.artist).trim();
-  const title = normalizeTitle(track.title).trim();
-
-  if (!apiKey) {
-    console.warn("[getsongbpm] GETSONGBPM_API_KEY is not set");
-    return null;
-  }
-  if (!artist || !title) return null;
-
-  try {
-    const combinedLookup = `song:${title} artist:${artist}`;
-    const [combinedItems, titleResults] = await Promise.all([
-      searchGetSong(apiKey, combinedLookup, "both"),
-      searchGetSong(apiKey, title, "song"),
-    ]);
-
-    let items = combinedItems;
-    if (items.length === 0) {
-      console.log("[getsongbpm] Combined lookup empty, using title-only results:", { artist, title });
-      items = filterByArtist(titleResults, artist);
-    }
-
-    if (items.length === 0) {
-      console.log("[getsongbpm] No results for:", { artist, title });
-      return null;
-    }
-
-    return pickBestMatch(items, artist, title);
-  } catch (err) {
-    console.error("[getsongbpm] Request error:", err);
-    return null;
-  }
-}

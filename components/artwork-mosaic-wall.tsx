@@ -98,25 +98,6 @@ function useMosaicGridCols(): number {
   return cols;
 }
 
-function getNeighborIndices(tileIndex: number, cols: number, total: number): number[] {
-  const row = Math.floor(tileIndex / cols);
-  const col = tileIndex % cols;
-  const neighbors: number[] = [];
-
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      if (dr === 0 && dc === 0) continue;
-      const r = row + dr;
-      const c = col + dc;
-      if (r < 0 || c < 0 || c >= cols) continue;
-      const idx = r * cols + c;
-      if (idx < total) neighbors.push(idx);
-    }
-  }
-
-  return neighbors;
-}
-
 function pickUrlAvoiding(
   pool: string[],
   forbidden: Set<string>,
@@ -124,16 +105,15 @@ function pickUrlAvoiding(
 ): string {
   if (pool.length === 0) return "";
 
-  let candidates = pool.filter((url) => !forbidden.has(url) && url !== exclude);
-  if (candidates.length > 0) {
-    return candidates[Math.floor(Math.random() * candidates.length)];
+  const blocked = new Set(forbidden);
+  if (exclude) blocked.add(exclude);
+
+  const unused = pool.filter((url) => !blocked.has(url));
+  if (unused.length > 0) {
+    return unused[Math.floor(Math.random() * unused.length)];
   }
 
-  candidates = pool.filter((url) => !forbidden.has(url));
-  if (candidates.length > 0) {
-    return candidates[Math.floor(Math.random() * candidates.length)];
-  }
-
+  // Pool smaller than the wall: never repeat the tile's current cover if possible.
   if (exclude && pool.length > 1) {
     const withoutExclude = pool.filter((url) => url !== exclude);
     if (withoutExclude.length > 0) {
@@ -162,17 +142,11 @@ function expandAndShuffleAssignments(uniqueUrls: string[], tileCount: number): s
 
 function buildInitialPairs(
   assignments: string[],
-  pool: string[],
-  cols: number,
-  tileCount: number
+  pool: string[]
 ): { urlA: string; urlB: string }[] {
-  return assignments.map((urlA, tileIndex) => {
-    const forbidden = new Set<string>([urlA]);
-    for (const neighborIndex of getNeighborIndices(tileIndex, cols, tileCount)) {
-      const neighborUrl = assignments[neighborIndex];
-      if (neighborUrl) forbidden.add(neighborUrl);
-    }
-    const urlB = pickUrlAvoiding(pool, forbidden, urlA);
+  const usedOnScreen = new Set(assignments);
+  return assignments.map((urlA) => {
+    const urlB = pickUrlAvoiding(pool, usedOnScreen, urlA);
     return { urlA, urlB };
   });
 }
@@ -206,6 +180,8 @@ function MosaicGridProvider({
   children: React.ReactNode;
 }) {
   const visibleUrlsRef = useRef<Map<number, string>>(new Map());
+  const reservedUrlsRef = useRef<Map<number, string>>(new Map());
+  const fadingOutUntilRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     const next = new Map<number, string>();
@@ -213,29 +189,45 @@ function MosaicGridProvider({
       next.set(tileIndex, pair.urlA);
     });
     visibleUrlsRef.current = next;
+    reservedUrlsRef.current = new Map();
+    fadingOutUntilRef.current = new Map();
   }, [initialPairs]);
 
-  const getForbiddenNeighborUrls = useCallback(
-    (tileIndex: number): Set<string> => {
-      const forbidden = new Set<string>();
-      for (const neighborIndex of getNeighborIndices(tileIndex, cols, TILE_COUNT)) {
-        const neighborUrl = visibleUrlsRef.current.get(neighborIndex);
-        if (neighborUrl) forbidden.add(neighborUrl);
-      }
-      return forbidden;
-    },
-    [cols]
-  );
+  const getUsedOnScreen = useCallback((tileIndex: number): Set<string> => {
+    const used = new Set<string>();
+    const now = Date.now();
+
+    for (const [index, url] of visibleUrlsRef.current) {
+      if (index !== tileIndex && url) used.add(url);
+    }
+    for (const [index, url] of reservedUrlsRef.current) {
+      if (index !== tileIndex && url) used.add(url);
+    }
+    for (const [url, until] of fadingOutUntilRef.current) {
+      if (until > now) used.add(url);
+      else fadingOutUntilRef.current.delete(url);
+    }
+    return used;
+  }, []);
 
   const pickCycleUrl = useCallback(
     (tileIndex: number, exclude?: string): string => {
-      return pickUrlAvoiding(shuffledUrls, getForbiddenNeighborUrls(tileIndex), exclude);
+      const next = pickUrlAvoiding(shuffledUrls, getUsedOnScreen(tileIndex), exclude);
+      reservedUrlsRef.current.set(tileIndex, next);
+      return next;
     },
-    [shuffledUrls, getForbiddenNeighborUrls]
+    [shuffledUrls, getUsedOnScreen]
   );
 
   const setVisibleUrl = useCallback((tileIndex: number, url: string) => {
+    const previous = visibleUrlsRef.current.get(tileIndex);
     visibleUrlsRef.current.set(tileIndex, url);
+    if (reservedUrlsRef.current.get(tileIndex) === url) {
+      reservedUrlsRef.current.delete(tileIndex);
+    }
+    if (previous && previous !== url) {
+      fadingOutUntilRef.current.set(previous, Date.now() + CROSSFADE_MS);
+    }
   }, []);
 
   const value = useMemo(
@@ -377,7 +369,7 @@ export function ArtworkMosaicWall({ active = true, className }: ArtworkMosaicWal
     if (uniqueUrls.length === 0) return null;
 
     const assignments = expandAndShuffleAssignments(uniqueUrls, TILE_COUNT);
-    const initialPairs = buildInitialPairs(assignments, uniqueUrls, cols, TILE_COUNT);
+    const initialPairs = buildInitialPairs(assignments, uniqueUrls);
 
     const assignmentCounts = new Map<string, number>();
     for (const url of assignments) {

@@ -2,7 +2,11 @@ import { CamelotKey } from "@/lib/camelot";
 import { fetchAcousticBrainzAnalysis } from "@/lib/acousticbrainz";
 
 const MUSICBRAINZ_BASE = "https://musicbrainz.org/ws/2";
-const MUSICBRAINZ_TIMEOUT_MS = 3000;
+// Last-resort under the 6s features budget. After a ~3s Recco/GetSongBPM/SoundNet
+// race, two cache-miss tracks still share MusicBrainz's 1.1s rate-limit gap.
+// 800ms per HTTP call + a single recording candidate keeps search + AcousticBrainz
+// inside the remaining window.
+const MUSICBRAINZ_TIMEOUT_MS = 800;
 
 const USER_AGENT =
   process.env.MUSICBRAINZ_USER_AGENT ??
@@ -128,7 +132,7 @@ export async function fetchTrackAudioAnalysis(track: TrackAudioInput): Promise<M
   }
 
   try {
-    const mbids = await searchRecordingMbids(track.artist, track.title, track.duration_ms);
+    const mbids = await searchRecordingMbids(track.artist, track.title, track.duration_ms, 1);
     if (mbids.length === 0) return EMPTY_ANALYSIS;
 
     for (const mbid of mbids) {

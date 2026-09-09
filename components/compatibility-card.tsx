@@ -11,7 +11,8 @@ import {
   getPopularityCompatibility,
   getReleaseDateCompatibility,
   getMixingTip,
-  getOverallCompatibilityFromTrackData,
+  getOverallCompatibilityFromAvailableFactors,
+  COMPATIBILITY_FACTOR_TOTAL,
   getStatBadgeStyle,
   parseMusicalKeyString,
   type KeyCompatibility,
@@ -32,8 +33,6 @@ import {
   Lightbulb,
   ListPlus,
   Info,
-  Lock,
-  LockOpen,
   GitBranch,
   Loader2,
   ArrowRight,
@@ -41,7 +40,9 @@ import {
   Sparkles,
 } from "lucide-react";
 
-export type AudioAnalysisSource = "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
+import type { AudioAnalysisSource } from "@/lib/audio-analysis";
+
+export type { AudioAnalysisSource };
 
 export interface TrackFeatures {
   popularity: number;
@@ -53,6 +54,8 @@ export interface TrackFeatures {
   musical_key: string | null;
   camelot: CamelotKey | null;
   source: AudioAnalysisSource;
+  needs_resolution?: boolean;
+  needs_audio_analysis?: boolean;
 }
 
 interface CompatibilityCardProps {
@@ -60,26 +63,34 @@ interface CompatibilityCardProps {
   featuresB: TrackFeatures;
   trackAId?: string;
   trackBId?: string;
+  trackAName?: string;
+  trackAArtist?: string;
+  trackAImage?: string | null;
   trackBName?: string;
   trackBArtist?: string;
+  trackBImage?: string | null;
   onAddToSetA?: () => void;
   onAddToSetB?: () => void;
 }
 
-interface BridgeTrackResult {
+interface BridgePathStep {
   spotify_id: string;
   name: string;
   artist: string;
   image: string | null;
-  bpm: number | null;
+  bpm: number;
   camelot: string;
-  compatWithTrack1: KeyCompatibility;
-  compatWithTrack2: KeyCompatibility;
+  role: "start" | "bridge" | "end";
+  fromPrevious: KeyCompatibility | null;
 }
 
 interface BridgeTracksResponse {
-  type: "single" | "path";
-  bridges: BridgeTrackResult[];
+  type: "path" | "partial";
+  complete: boolean;
+  bpmTolerancePercent: 6 | 8 | 10;
+  intermediateCount: number;
+  path: BridgePathStep[];
+  message: string;
 }
 
 const bridgeFetchInflight = new Map<string, Promise<BridgeTracksResponse>>();
@@ -160,28 +171,35 @@ async function fetchNextTracksOnce(
 async function fetchBridgeTracksOnce(
   requestKey: string,
   body: {
-    track1: { spotify_id: string; camelot: string; bpm: number };
-    track2: { spotify_id: string; camelot: string; bpm: number };
+    track1: {
+      spotify_id: string;
+      camelot: string;
+      bpm: number;
+      name?: string;
+      artist?: string;
+      image?: string | null;
+    };
+    track2: {
+      spotify_id: string;
+      camelot: string;
+      bpm: number;
+      name?: string;
+      artist?: string;
+      image?: string | null;
+    };
   },
-  options?: { bust?: boolean; lockedA?: string; lockedB?: string }
+  options?: { bust?: boolean }
 ): Promise<BridgeTracksResponse> {
   const bust = options?.bust ?? false;
-  const lockedA = options?.lockedA?.trim();
-  const lockedB = options?.lockedB?.trim();
 
-  if (!bust && !lockedA && !lockedB) {
+  if (!bust) {
     const existing = bridgeFetchInflight.get(requestKey);
     if (existing) return existing;
   }
 
   const promise = (async () => {
-    const params = new URLSearchParams();
-    if (bust) params.set("bust", "1");
-    if (lockedA) params.set("locked_a", lockedA);
-    if (lockedB) params.set("locked_b", lockedB);
-    const query = params.toString();
-    const url = query
-      ? `/api/recommendations/bridge?${query}`
+    const url = bust
+      ? "/api/recommendations/bridge?bust=1"
       : "/api/recommendations/bridge";
     const res = await fetch(url, {
       method: "POST",
@@ -193,12 +211,18 @@ async function fetchBridgeTracksOnce(
 
     const data = (await res.json()) as BridgeTracksResponse;
     return {
-      type: data.type ?? "single",
-      bridges: data.bridges ?? [],
+      type: data.type === "partial" ? "partial" : "path",
+      complete: Boolean(data.complete),
+      bpmTolerancePercent: data.bpmTolerancePercent === 8 || data.bpmTolerancePercent === 10
+        ? data.bpmTolerancePercent
+        : 6,
+      intermediateCount: data.intermediateCount ?? Math.max(0, (data.path?.length ?? 0) - 2),
+      path: data.path ?? [],
+      message: data.message ?? "",
     };
   })();
 
-  if (bust || lockedA || lockedB) return promise;
+  if (bust) return promise;
 
   bridgeFetchInflight.set(requestKey, promise);
 
@@ -225,107 +249,28 @@ function CompatBadge({ compat, prefix }: { compat: KeyCompatibility; prefix: str
   );
 }
 
-function BridgeTrackCard({
-  bridge,
+function BridgePathStepCard({
+  step,
   label,
 }: {
-  bridge: BridgeTrackResult;
-  label?: string;
-}) {
-  const camelotKey = parseMusicalKeyString(bridge.camelot);
-  const camelotStyle = camelotKey ? getKeyCompatStyle("compatible") : null;
-
-  return (
-    <div className="flex min-w-0 flex-1 items-start gap-3 rounded-xl border border-border/50 bg-background/30 p-3">
-      <div className="size-12 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
-        {bridge.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={bridge.image} alt="" className="size-full object-cover" />
-        ) : (
-          <div className="size-full bg-muted" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-        {label && (
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a855f7]">
-            {label}
-          </p>
-        )}
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{bridge.name}</p>
-          <p className="text-xs text-muted-foreground truncate">{bridge.artist}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {bridge.bpm != null && (
-            <span className="text-[10px] font-mono text-muted-foreground">
-              {bridge.bpm} BPM
-            </span>
-          )}
-          {camelotKey && camelotStyle && (
-            <span
-              className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold font-mono"
-              style={{
-                color: camelotStyle.color,
-                backgroundColor: camelotStyle.bg,
-                borderColor: camelotStyle.border,
-              }}
-            >
-              {bridge.camelot}
-            </span>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <CompatBadge compat={bridge.compatWithTrack1} prefix="Track 1" />
-          <CompatBadge compat={bridge.compatWithTrack2} prefix="Track 2" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BridgePathTrackCard({
-  bridge,
-  label,
-  locked,
-  onToggleLock,
-}: {
-  bridge: BridgeTrackResult;
+  step: BridgePathStep;
   label: string;
-  locked: boolean;
-  onToggleLock: () => void;
 }) {
-  const camelotKey = parseMusicalKeyString(bridge.camelot);
+  const camelotKey = parseMusicalKeyString(step.camelot);
   const camelotStyle = camelotKey ? getKeyCompatStyle("compatible") : null;
+  const isEndpoint = step.role === "start" || step.role === "end";
 
   return (
     <div
       className={cn(
-        "relative flex min-w-0 flex-1 items-start gap-3 rounded-xl border bg-background/30 p-3 pt-9",
-        locked ? "border-[#a855f7]/45" : "border-border/50"
+        "flex min-w-0 flex-1 items-start gap-3 rounded-xl border bg-background/30 p-3",
+        isEndpoint ? "border-border/70" : "border-border/50"
       )}
     >
-      <button
-        type="button"
-        onClick={onToggleLock}
-        aria-label={locked ? `Unlock ${label}` : `Lock ${label}`}
-        aria-pressed={locked}
-        className={cn(
-          "absolute top-2 right-2 inline-flex rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a855f7]/50",
-          locked
-            ? "text-[#a855f7]"
-            : "text-muted-foreground hover:text-muted-foreground/90"
-        )}
-      >
-        {locked ? (
-          <Lock className="size-3.5" aria-hidden="true" />
-        ) : (
-          <LockOpen className="size-3.5" aria-hidden="true" />
-        )}
-      </button>
       <div className="size-12 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
-        {bridge.image ? (
+        {step.image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={bridge.image} alt="" className="size-full object-cover" />
+          <img src={step.image} alt="" className="size-full object-cover" />
         ) : (
           <div className="size-full bg-muted" />
         )}
@@ -335,15 +280,15 @@ function BridgePathTrackCard({
           {label}
         </p>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{bridge.name}</p>
-          <p className="text-xs text-muted-foreground truncate">{bridge.artist}</p>
+          <p className="text-sm font-semibold text-foreground truncate">{step.name}</p>
+          {step.artist ? (
+            <p className="text-xs text-muted-foreground truncate">{step.artist}</p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {bridge.bpm != null && (
-            <span className="text-[10px] font-mono text-muted-foreground">
-              {bridge.bpm} BPM
-            </span>
-          )}
+          <span className="text-[10px] font-mono text-muted-foreground">
+            {step.bpm} BPM
+          </span>
           {camelotKey && camelotStyle && (
             <span
               className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold font-mono"
@@ -353,14 +298,15 @@ function BridgePathTrackCard({
                 borderColor: camelotStyle.border,
               }}
             >
-              {bridge.camelot}
+              {step.camelot}
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <CompatBadge compat={bridge.compatWithTrack1} prefix="Track 1" />
-          <CompatBadge compat={bridge.compatWithTrack2} prefix="Track 2" />
-        </div>
+        {step.fromPrevious && (
+          <div className="flex flex-wrap gap-1.5">
+            <CompatBadge compat={step.fromPrevious} prefix="From previous" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -368,15 +314,30 @@ function BridgePathTrackCard({
 
 function BridgePathConnector() {
   return (
-    <div className="flex items-center justify-center px-1 py-1 sm:py-0">
-      <ArrowRight className="size-4 text-muted-foreground/80 rotate-90 sm:rotate-0" />
+    <div className="flex items-center justify-center px-1 py-1">
+      <ArrowRight className="size-4 text-muted-foreground/80 rotate-90" />
     </div>
   );
+}
+
+function pathStepLabel(step: BridgePathStep, index: number, path: BridgePathStep[]): string {
+  if (step.role === "start") return "Track 1";
+  if (step.role === "end") return "Track 2";
+  const isLast = index === path.length - 1;
+  if (isLast) return "Closest so far";
+  const bridgeIndex = path.slice(1, index).filter((item) => item.role === "bridge").length;
+  return `Bridge ${String.fromCharCode(65 + bridgeIndex)}`;
 }
 
 function BridgeTracksSection({
   trackAId,
   trackBId,
+  trackAName,
+  trackAArtist,
+  trackAImage,
+  trackBName,
+  trackBArtist,
+  trackBImage,
   camelotA,
   camelotB,
   bpmA,
@@ -384,18 +345,19 @@ function BridgeTracksSection({
 }: {
   trackAId: string;
   trackBId: string;
+  trackAName?: string;
+  trackAArtist?: string;
+  trackAImage?: string | null;
+  trackBName?: string;
+  trackBArtist?: string;
+  trackBImage?: string | null;
   camelotA: CamelotKey;
   camelotB: CamelotKey;
   bpmA: number | null;
   bpmB: number | null;
 }) {
   const [loading, setLoading] = useState(true);
-  const [bridgeResponse, setBridgeResponse] = useState<BridgeTracksResponse>({
-    type: "single",
-    bridges: [],
-  });
-  const [lockedBridgeA, setLockedBridgeA] = useState(false);
-  const [lockedBridgeB, setLockedBridgeB] = useState(false);
+  const [bridgeResponse, setBridgeResponse] = useState<BridgeTracksResponse | null>(null);
 
   const requestKey = `${trackAId}:${trackBId}:${camelotA.label}:${camelotB.label}:${bpmA ?? 0}:${bpmB ?? 0}`;
   const requestBody = {
@@ -403,54 +365,19 @@ function BridgeTracksSection({
       spotify_id: trackAId,
       camelot: camelotA.label,
       bpm: bpmA ?? 0,
+      name: trackAName,
+      artist: trackAArtist,
+      image: trackAImage,
     },
     track2: {
       spotify_id: trackBId,
       camelot: camelotB.label,
       bpm: bpmB ?? 0,
+      name: trackBName,
+      artist: trackBArtist,
+      image: trackBImage,
     },
   };
-
-  async function loadBridges(
-    bust = false,
-    locks?: { lockedA?: string; lockedB?: string }
-  ) {
-    setLoading(true);
-    try {
-      const results = await fetchBridgeTracksOnce(requestKey, requestBody, {
-        bust,
-        lockedA: locks?.lockedA,
-        lockedB: locks?.lockedB,
-      });
-      setBridgeResponse(results);
-      if (results.type !== "path") {
-        setLockedBridgeA(false);
-        setLockedBridgeB(false);
-      }
-    } catch {
-      setBridgeResponse({ type: "single", bridges: [] });
-      setLockedBridgeA(false);
-      setLockedBridgeB(false);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleReroll() {
-    const { type, bridges } = bridgeResponse;
-
-    if (type === "path" && bridges.length >= 2) {
-      if (lockedBridgeA && lockedBridgeB) return;
-
-      void loadBridges(true, {
-        lockedA: lockedBridgeA ? bridges[0].spotify_id : undefined,
-        lockedB: lockedBridgeB ? bridges[1].spotify_id : undefined,
-      });
-      return;
-    }
-
-    void loadBridges(true);
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -462,7 +389,7 @@ function BridgeTracksSection({
         if (cancelled) return;
         setBridgeResponse(results);
       } catch {
-        if (!cancelled) setBridgeResponse({ type: "single", bridges: [] });
+        if (!cancelled) setBridgeResponse(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -474,43 +401,28 @@ function BridgeTracksSection({
     };
   }, [trackAId, trackBId, camelotA.label, camelotB.label, bpmA, bpmB]);
 
-  useEffect(() => {
-    setLockedBridgeA(false);
-    setLockedBridgeB(false);
-  }, [trackAId, trackBId, camelotA.label, camelotB.label]);
-
-  const { type, bridges } = bridgeResponse;
-  const bothPathBridgesLocked =
-    type === "path" && bridges.length >= 2 && lockedBridgeA && lockedBridgeB;
+  const path = bridgeResponse?.path ?? [];
+  const looserMatch = (bridgeResponse?.bpmTolerancePercent ?? 6) > 6;
 
   return (
     <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-3")} style={cohesiveSurfaceStyle()}>
       <div className="flex items-start gap-2.5">
         <GitBranch className="size-5 text-[#a855f7] flex-shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold tracking-wide text-foreground">Bridge Tracks</h3>
-            <span className="group/reroll relative ml-auto inline-flex">
-              <button
-                type="button"
-                onClick={handleReroll}
-                disabled={loading || bothPathBridgesLocked}
-                aria-label="Get different suggestions"
-                className="inline-flex rounded-md p-1.5 text-muted-foreground transition-[color,filter] hover:text-white hover:drop-shadow-[0_0_8px_rgba(168,85,247,0.85)] disabled:pointer-events-none disabled:opacity-40 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a855f7]/50"
-              >
-                <Dices className="size-5" aria-hidden="true" />
-              </button>
-              <span
-                role="tooltip"
-                className="pointer-events-none absolute top-[calc(100%+6px)] right-0 z-50 w-max rounded-md border border-border bg-popover px-2.5 py-1.5 text-[11px] text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 group-hover/reroll:visible group-hover/reroll:opacity-100"
-              >
-                Get different suggestions
-              </span>
-            </span>
-          </div>
+          <h3 className="text-sm font-semibold tracking-wide text-foreground">Bridge Tracks</h3>
           <p className="text-[11px] text-muted-foreground/80 mt-0.5 leading-snug">
-            Tracks that connect both keys for a smoother mix transition
+            {loading
+              ? "Searching the cache for a mixable path…"
+              : bridgeResponse?.message || "Play through this sequence to connect both tracks"}
           </p>
+          {!loading && bridgeResponse && (
+            <p className="text-[11px] mt-1 font-medium" style={{ color: looserMatch ? "#fbbf24" : "#c084fc" }}>
+              {looserMatch
+                ? `Looser match — ${bridgeResponse.bpmTolerancePercent}% BPM window`
+                : `${bridgeResponse.bpmTolerancePercent}% BPM window`}
+              {bridgeResponse.complete ? "" : " · partial path"}
+            </p>
+          )}
         </div>
       </div>
 
@@ -519,41 +431,36 @@ function BridgeTracksSection({
           <Loader2 className="size-4 animate-spin text-[#a855f7]" />
           Finding bridge tracks…
         </div>
-      ) : bridges.length === 0 ? (
+      ) : path.length === 0 ? (
         <p className="text-xs text-muted-foreground/70 text-center py-4">
-          No bridge tracks found
+          Couldn’t find a mixable path toward Track 2 in the cache.
         </p>
-      ) : type === "path" && bridges.length >= 2 ? (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted-foreground">
-            <span className="font-semibold text-[#c084fc]">Track 1</span>
-            <ArrowRight className="size-3 shrink-0" />
-            <span className="font-semibold text-foreground">Bridge A</span>
-            <ArrowRight className="size-3 shrink-0" />
-            <span className="font-semibold text-foreground">Bridge B</span>
-            <ArrowRight className="size-3 shrink-0" />
-            <span className="font-semibold text-[#93c5fd]">Track 2</span>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-stretch gap-1 sm:gap-2">
-            <BridgePathTrackCard
-              bridge={bridges[0]}
-              label="Bridge A"
-              locked={lockedBridgeA}
-              onToggleLock={() => setLockedBridgeA((value) => !value)}
-            />
-            <BridgePathConnector />
-            <BridgePathTrackCard
-              bridge={bridges[1]}
-              label="Bridge B"
-              locked={lockedBridgeB}
-              onToggleLock={() => setLockedBridgeB((value) => !value)}
-            />
-          </div>
-        </div>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {bridges.map((bridge) => (
-            <BridgeTrackCard key={bridge.spotify_id} bridge={bridge} />
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-muted-foreground pb-2">
+            {path.map((step, index) => (
+              <span key={`${step.spotify_id}-${index}`} className="inline-flex items-center gap-1.5">
+                {index > 0 && <ArrowRight className="size-3 shrink-0" />}
+                <span
+                  className={cn(
+                    "font-semibold",
+                    step.role === "start"
+                      ? "text-[#c084fc]"
+                      : step.role === "end"
+                        ? "text-[#93c5fd]"
+                        : "text-foreground"
+                  )}
+                >
+                  {pathStepLabel(step, index, path)}
+                </span>
+              </span>
+            ))}
+          </div>
+          {path.map((step, index) => (
+            <div key={`${step.spotify_id}-${index}`}>
+              {index > 0 && <BridgePathConnector />}
+              <BridgePathStepCard step={step} label={pathStepLabel(step, index, path)} />
+            </div>
           ))}
         </div>
       )}
@@ -767,11 +674,6 @@ function getDefaultBadgeLabel(score: number): string {
   return "Divergent";
 }
 
-const SCORE_WEIGHTING_WITH_AUDIO =
-  "Weighted: key (25%), BPM (25%), popularity (15%), duration (15%), genre (10%), release (10%)";
-const SCORE_WEIGHTING_WITHOUT_AUDIO =
-  "Weighted: popularity (30%), duration (25%), genre (25%), release date (20%)";
-
 const SCORE_TOOLTIP_SHADOW =
   "shadow-[0_8px_24px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)]";
 
@@ -802,7 +704,15 @@ function ScoreWeightingTooltip({ text, id }: { text: string; id: string }) {
 
 // ─── Score Ring ────────────────────────────────────────────────────────────────
 
-function ScoreRing({ score, size = 185 }: { score: number; size?: number }) {
+function ScoreRing({
+  score,
+  factorCount,
+  size = 185,
+}: {
+  score: number;
+  factorCount: number;
+  size?: number;
+}) {
   const glowFilterId = useId();
   const strokeWidth = size * 0.0625;
   const ringPadding = size * 0.125;
@@ -817,8 +727,8 @@ function ScoreRing({ score, size = 185 }: { score: number; size?: number }) {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} overflow="visible" aria-hidden="true">
+      <div className="relative max-w-full" style={{ width: size, height: size }}>
+        <svg width={size} height={size} overflow="visible" aria-hidden="true" className="max-w-full h-auto">
           <defs>
             <filter
               id={glowFilterId}
@@ -873,12 +783,60 @@ function ScoreRing({ score, size = 185 }: { score: number; size?: number }) {
           </span>
         </div>
       </div>
+      <span className="text-[11px] text-muted-foreground">
+        Scored on {factorCount} of {COMPATIBILITY_FACTOR_TOTAL} factors
+      </span>
       <span className="text-sm font-semibold md:text-base" style={{ color }}>{label}</span>
     </div>
   );
 }
 
+function InsufficientScorePlaceholder({ size = 185 }: { size?: number }) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div
+        className="flex max-w-full items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-7 text-center"
+        style={{ width: size, height: size }}
+      >
+        <p className="text-sm leading-snug text-muted-foreground">
+          Insufficient data for compatibility scoring
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Stat Row ─────────────────────────────────────────────────────────────────
+
+function CompatibilityBar({
+  score,
+  barColor,
+  className,
+}: {
+  score: number;
+  barColor: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative h-1.5 flex-shrink-0 overflow-hidden rounded-full bg-white/5 cursor-help",
+        className
+      )}
+      title="Bar length reflects compatibility score, not the raw distance between values."
+    >
+      <div
+        className="absolute inset-y-0 left-0 rounded-full"
+        style={{
+          width: `${score}%`,
+          background: barColor,
+          boxShadow: `0 0 4px ${barColor}`,
+          transition: "width 0.8s ease",
+        }}
+      />
+    </div>
+  );
+}
 
 function StatRow({
   label,
@@ -905,13 +863,13 @@ function StatRow({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Icon className="size-4" />
-          <span>{label}</span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+          <Icon className="size-4 shrink-0" />
+          <span className="truncate">{label}</span>
         </div>
         <span
-          className="rounded-full border px-2 py-0.5 text-xs font-medium"
+          className="shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium"
           style={{
             color: resolvedBadgeStyle.color,
             backgroundColor: resolvedBadgeStyle.bg,
@@ -921,24 +879,16 @@ function StatRow({
           {badgeLabel}
         </span>
       </div>
-      <div className={cn("flex min-w-0 items-center gap-2", valueRowClassName)}>
+      <div className={cn("flex flex-col gap-1.5 md:hidden", valueRowClassName)}>
+        <span className="text-xs font-mono text-[#c084fc] break-words">{valueA}</span>
+        <CompatibilityBar score={score} barColor={barColor} className="w-full" />
+        <span className="text-xs font-mono text-[#93c5fd] break-words">{valueB}</span>
+      </div>
+      <div className={cn("hidden min-w-0 items-center gap-2 md:flex", valueRowClassName)}>
         <div className="flex-1 min-w-0 flex items-center gap-2 justify-end overflow-hidden">
           <span className="text-xs font-mono text-[#c084fc] truncate text-right w-full">{valueA}</span>
         </div>
-        <div
-          className="w-24 h-1.5 rounded-full bg-white/5 overflow-hidden relative flex-shrink-0 cursor-help"
-          title="Bar length reflects compatibility score, not the raw distance between values."
-        >
-          <div
-            className="absolute inset-y-0 left-0 rounded-full"
-            style={{
-              width: `${score}%`,
-              background: barColor,
-              boxShadow: `0 0 4px ${barColor}`,
-              transition: "width 0.8s ease",
-            }}
-          />
-        </div>
+        <CompatibilityBar score={score} barColor={barColor} className="w-24" />
         <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
           <span className="text-xs font-mono text-[#93c5fd] truncate w-full">{valueB}</span>
         </div>
@@ -965,40 +915,54 @@ export function CompatibilityCard({
   featuresB,
   trackAId,
   trackBId,
+  trackAName,
+  trackAArtist,
+  trackAImage,
   trackBName,
   trackBArtist,
+  trackBImage,
   onAddToSetA,
   onAddToSetB,
 }: CompatibilityCardProps) {
   const camelotA = resolveCamelotKey(featuresA.camelot);
   const camelotB = resolveCamelotKey(featuresB.camelot);
 
-  const popScore = getPopularityCompatibility(featuresA.popularity, featuresB.popularity);
-  const durScore = getDurationCompatibility(featuresA.duration_ms, featuresB.duration_ms);
-  const genreScore = getGenreCompatibility(featuresA.genres, featuresB.genres);
-  const releaseScore = getReleaseDateCompatibility(featuresA.release_date, featuresB.release_date);
-  const bpmScore =
-    featuresA.bpm != null && featuresB.bpm != null
-      ? getBpmCompatibility(featuresA.bpm, featuresB.bpm)
-      : null;
-  const keyCompat =
-    camelotA && camelotB
-      ? getKeyCompatibility(camelotA, camelotB)
-      : null;
+  const hasBpm = featuresA.bpm != null && featuresB.bpm != null;
+  const hasKey = Boolean(camelotA && camelotB);
+  const hasCoreAnalysis = hasBpm && hasKey;
 
-  const overallScore = getOverallCompatibilityFromTrackData(
-    featuresA.popularity, featuresB.popularity,
-    featuresA.duration_ms, featuresB.duration_ms,
-    featuresA.genres, featuresB.genres,
-    featuresA.release_date, featuresB.release_date,
-    featuresA.bpm, featuresB.bpm,
-    keyCompat?.score ?? null,
-  );
+  const hasPopularity = featuresA.popularity > 0 && featuresB.popularity > 0;
+  const hasDuration = featuresA.duration_ms > 0 && featuresB.duration_ms > 0;
+  const hasGenres = featuresA.genres.length > 0 && featuresB.genres.length > 0;
+  const hasReleaseDate = Boolean(featuresA.release_date && featuresB.release_date);
 
-  const hasAudioAnalysis = Boolean(
-    (featuresA.bpm != null && featuresB.bpm != null) ||
-    (camelotA && camelotB)
-  );
+  const popScore = hasPopularity
+    ? getPopularityCompatibility(featuresA.popularity, featuresB.popularity)
+    : null;
+  const durScore = hasDuration
+    ? getDurationCompatibility(featuresA.duration_ms, featuresB.duration_ms)
+    : null;
+  const genreScore = hasGenres
+    ? getGenreCompatibility(featuresA.genres, featuresB.genres)
+    : null;
+  const releaseScore = hasReleaseDate
+    ? getReleaseDateCompatibility(featuresA.release_date, featuresB.release_date)
+    : null;
+  const bpmScore = hasBpm ? getBpmCompatibility(featuresA.bpm!, featuresB.bpm!) : null;
+  const keyCompat = hasKey && camelotA && camelotB
+    ? getKeyCompatibility(camelotA, camelotB)
+    : null;
+
+  const overall = hasCoreAnalysis && bpmScore != null && keyCompat
+    ? getOverallCompatibilityFromAvailableFactors({
+        keyScore: keyCompat.score,
+        bpmScore,
+        popularityScore: popScore,
+        durationScore: durScore,
+        genreScore,
+        releaseScore,
+      })
+    : null;
 
   function formatDuration(ms: number) {
     const s = Math.floor(ms / 1000);
@@ -1007,11 +971,15 @@ export function CompatibilityCard({
 
   const mixingTip = keyCompat ? getMixingTip(keyCompat) : null;
   const keyCompatStyle = keyCompat ? getKeyCompatStyle(keyCompat.type) : null;
+  const bpmUnavailableNote =
+    featuresA.needs_resolution || featuresB.needs_resolution
+      ? "BPM unavailable — will resolve when Spotify rate limit clears"
+      : "BPM and key unavailable for one or both tracks";
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex min-w-0 max-w-full flex-col gap-8">
 
-      <div className="flex items-center gap-3 overflow-visible border-b border-border/50 pb-5">
+      <div className="flex flex-wrap items-center gap-3 overflow-visible border-b border-border/50 pb-5">
         <div
           className="size-1.5 rounded-full"
           style={{
@@ -1033,21 +1001,28 @@ export function CompatibilityCard({
           </button>
           <ScoreWeightingTooltip
             id="compatibility-score-weighting"
-            text={hasAudioAnalysis ? SCORE_WEIGHTING_WITH_AUDIO : SCORE_WEIGHTING_WITHOUT_AUDIO}
+            text={
+              overall?.weightingText ??
+              "BPM and key are required to produce a compatibility score"
+            }
           />
         </span>
       </div>
 
       {/* Score + Camelot wheel */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-        <div className="flex flex-col items-center">
-          <ScoreRing score={overallScore} size={185} />
+      <div className="grid w-full min-w-0 grid-cols-1 md:grid-cols-2 gap-6 items-center">
+        <div className="flex w-full max-w-full flex-col items-center">
+          {overall ? (
+            <ScoreRing score={overall.score} factorCount={overall.factorCount} size={185} />
+          ) : (
+            <InsufficientScorePlaceholder size={185} />
+          )}
         </div>
-        <div className="flex flex-col gap-3">
+        <div className="flex w-full max-w-full flex-col gap-3">
           {camelotA && camelotB ? (
             <CamelotWheel keyA={camelotA} keyB={camelotB} />
           ) : (
-            <CamelotWheel disabled comingSoonNote="BPM and key unavailable for one or both tracks" />
+            <CamelotWheel disabled comingSoonNote={bpmUnavailableNote} />
           )}
           {keyCompat && keyCompatStyle && (
             <div
@@ -1070,10 +1045,10 @@ export function CompatibilityCard({
 
       {/* Stats panel */}
       <div className={cn(COHESIVE_INNER_CARD_CLASS, "p-4 flex flex-col gap-5")} style={cohesiveSurfaceStyle()}>
-        <div className="flex items-center gap-2 text-sm font-semibold border-b border-border/50 pb-3">
+        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold border-b border-border/50 pb-3">
           <Activity className="size-4 text-muted-foreground" />
           <span>Track Comparison</span>
-          <div className="ml-auto flex gap-4 text-xs">
+          <div className="ml-auto flex flex-wrap gap-x-4 gap-y-1 text-xs">
             <div className="flex items-center gap-1.5">
               <div className="size-2 rounded-full bg-[#a855f7]" />
               <span className="text-[#c084fc]">Track 1</span>
@@ -1085,38 +1060,46 @@ export function CompatibilityCard({
           </div>
         </div>
 
-        <StatRow
-          label="Popularity"
-          icon={TrendingUp}
-          score={popScore}
-          valueA={`${featuresA.popularity}/100`}
-          valueB={`${featuresB.popularity}/100`}
-        />
+        {hasPopularity && popScore != null && (
+          <StatRow
+            label="Popularity"
+            icon={TrendingUp}
+            score={popScore}
+            valueA={`${featuresA.popularity}/100`}
+            valueB={`${featuresB.popularity}/100`}
+          />
+        )}
 
-        <StatRow
-          label="Duration"
-          icon={Clock}
-          score={durScore}
-          valueA={formatDuration(featuresA.duration_ms)}
-          valueB={formatDuration(featuresB.duration_ms)}
-        />
+        {hasDuration && durScore != null && (
+          <StatRow
+            label="Duration"
+            icon={Clock}
+            score={durScore}
+            valueA={formatDuration(featuresA.duration_ms)}
+            valueB={formatDuration(featuresB.duration_ms)}
+          />
+        )}
 
-        <StatRow
-          label="Genre Match"
-          icon={Tag}
-          score={genreScore}
-          valueA={featuresA.genres.slice(0, 2).join(", ") || "Unknown"}
-          valueB={featuresB.genres.slice(0, 2).join(", ") || "Unknown"}
-          valueRowClassName="mt-0.5"
-        />
+        {hasGenres && genreScore != null && (
+          <StatRow
+            label="Genre Match"
+            icon={Tag}
+            score={genreScore}
+            valueA={featuresA.genres.slice(0, 2).join(", ")}
+            valueB={featuresB.genres.slice(0, 2).join(", ")}
+            valueRowClassName="mt-0.5"
+          />
+        )}
 
-        <StatRow
-          label="Release Date"
-          icon={Calendar}
-          score={releaseScore}
-          valueA={formatReleaseDate(featuresA.release_date)}
-          valueB={formatReleaseDate(featuresB.release_date)}
-        />
+        {hasReleaseDate && releaseScore != null && (
+          <StatRow
+            label="Release Date"
+            icon={Calendar}
+            score={releaseScore}
+            valueA={formatReleaseDate(featuresA.release_date)}
+            valueB={formatReleaseDate(featuresB.release_date)}
+          />
+        )}
 
         <StatRow
           label="BPM"
@@ -1141,11 +1124,11 @@ export function CompatibilityCard({
       {(featuresA.genres.length > 0 || featuresB.genres.length > 0) && (
         <div className={cn(COHESIVE_INNER_CARD_CLASS, "px-4 py-3 flex flex-col gap-2")} style={cohesiveSurfaceStyle()}>
           <p className="text-xs font-semibold text-muted-foreground">Artist Genres</p>
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center justify-center">
-              <span className="group/genre-a relative inline-flex min-w-0 max-w-full justify-center">
+          <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-center">
+            <div className="flex min-w-0 flex-1 items-center justify-start md:justify-center">
+              <span className="group/genre-a relative inline-flex min-w-0 max-w-full justify-start md:justify-center">
                 <p
-                  className="min-w-0 max-w-full truncate whitespace-nowrap overflow-hidden text-ellipsis text-center text-xs text-[#c084fc]"
+                  className="min-w-0 max-w-full whitespace-normal break-words text-left text-xs text-[#c084fc] md:truncate md:whitespace-nowrap md:overflow-hidden md:text-ellipsis md:text-center"
                   title={featuresA.genres.join(", ")}
                 >
                   {featuresA.genres.join(", ") || "—"}
@@ -1153,18 +1136,18 @@ export function CompatibilityCard({
                 {featuresA.genres.length > 0 && (
                   <span
                     role="tooltip"
-                    className="pointer-events-none absolute top-[calc(100%+6px)] left-1/2 z-50 w-max max-w-[15rem] -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-center text-[11px] leading-snug text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 group-hover/genre-a:visible group-hover/genre-a:opacity-100"
+                    className="pointer-events-none absolute top-[calc(100%+6px)] left-0 z-50 hidden w-max max-w-[min(15rem,calc(100vw-2rem))] -translate-x-0 rounded-md border border-border bg-popover px-2.5 py-1.5 text-center text-[11px] leading-snug text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 md:block md:left-1/2 md:-translate-x-1/2 group-hover/genre-a:visible group-hover/genre-a:opacity-100"
                   >
                     {featuresA.genres.join(", ")}
                   </span>
                 )}
               </span>
             </div>
-            <div className="w-24 flex-shrink-0" aria-hidden="true" />
-            <div className="flex min-w-0 flex-1 items-center justify-center">
-              <span className="group/genre-b relative inline-flex min-w-0 max-w-full justify-center">
+            <div className="hidden w-24 flex-shrink-0 md:block" aria-hidden="true" />
+            <div className="flex min-w-0 flex-1 items-center justify-start md:justify-center">
+              <span className="group/genre-b relative inline-flex min-w-0 max-w-full justify-start md:justify-center">
                 <p
-                  className="min-w-0 max-w-full truncate whitespace-nowrap overflow-hidden text-ellipsis text-center text-xs text-[#93c5fd]"
+                  className="min-w-0 max-w-full whitespace-normal break-words text-left text-xs text-[#93c5fd] md:truncate md:whitespace-nowrap md:overflow-hidden md:text-ellipsis md:text-center"
                   title={featuresB.genres.join(", ")}
                 >
                   {featuresB.genres.join(", ") || "—"}
@@ -1172,7 +1155,7 @@ export function CompatibilityCard({
                 {featuresB.genres.length > 0 && (
                   <span
                     role="tooltip"
-                    className="pointer-events-none absolute top-[calc(100%+6px)] left-1/2 z-50 w-max max-w-[15rem] -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-center text-[11px] leading-snug text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 group-hover/genre-b:visible group-hover/genre-b:opacity-100"
+                    className="pointer-events-none absolute top-[calc(100%+6px)] left-0 z-50 hidden w-max max-w-[min(15rem,calc(100vw-2rem))] rounded-md border border-border bg-popover px-2.5 py-1.5 text-center text-[11px] leading-snug text-popover-foreground shadow-lg opacity-0 invisible transition-opacity duration-150 md:block md:left-1/2 md:-translate-x-1/2 group-hover/genre-b:visible group-hover/genre-b:opacity-100"
                   >
                     {featuresB.genres.join(", ")}
                   </span>
@@ -1238,6 +1221,12 @@ export function CompatibilityCard({
           <BridgeTracksSection
             trackAId={trackAId}
             trackBId={trackBId}
+            trackAName={trackAName}
+            trackAArtist={trackAArtist}
+            trackAImage={trackAImage}
+            trackBName={trackBName}
+            trackBArtist={trackBArtist}
+            trackBImage={trackBImage}
             camelotA={camelotA}
             camelotB={camelotB}
             bpmA={featuresA.bpm}

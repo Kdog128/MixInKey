@@ -9,7 +9,7 @@ import {
   type DraggableStateSnapshot,
   type DropResult,
 } from "@hello-pangea/dnd";
-import { GripVertical, Trash2, Heart, Music } from "lucide-react";
+import { GripVertical, Trash2, Heart, Music, Loader2 } from "lucide-react";
 import type { SetlistTrack } from "@/lib/setlist";
 import {
   getKeyCompatStyle,
@@ -49,6 +49,7 @@ export function SetlistTrackListHeader() {
 
 interface SetlistTrackListProps {
   tracks: SetlistTrack[];
+  audioAnalyzingIds?: Set<string>;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onRemove: (spotifyId: string) => void;
 }
@@ -138,6 +139,7 @@ interface SetlistTrackRowProps {
   onRemove: (spotifyId: string) => void;
   outgoingTransition: TransitionAnalysis | null;
   camelotLabel: string | null;
+  audioAnalyzing?: boolean;
 }
 
 function SetlistTrackRow({
@@ -151,6 +153,7 @@ function SetlistTrackRow({
   onRemove,
   outgoingTransition,
   camelotLabel,
+  audioAnalyzing = false,
 }: SetlistTrackRowProps) {
   const { style: dragStyle, ...draggableProps } = dragProvided.draggableProps;
   const isDraggingVisual = snapshot.isDragging || snapshot.isClone;
@@ -207,6 +210,12 @@ function SetlistTrackRow({
           <p className="text-sm text-muted-foreground truncate" title={track.artist}>
             {track.artist}
           </p>
+          {audioAnalyzing && (
+            <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Loader2 className="size-3 shrink-0 animate-spin" />
+              Analyzing audio…
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2 mt-1 sm:hidden">
             <span className="text-xs font-mono text-muted-foreground">
               {track.bpm != null ? `${track.bpm} BPM` : "— BPM"}
@@ -274,7 +283,12 @@ function getTrackRowContext(tracks: SetlistTrack[], index: number) {
   return { track, outgoingTransition, camelotLabel };
 }
 
-export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackListProps) {
+export function SetlistTrackList({
+  tracks,
+  audioAnalyzingIds,
+  onReorder,
+  onRemove,
+}: SetlistTrackListProps) {
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -346,6 +360,7 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
                   onRemove={onRemove}
                   outgoingTransition={outgoingTransition}
                   camelotLabel={camelotLabel}
+                  audioAnalyzing={audioAnalyzingIds?.has(track.spotify_id) ?? false}
                 />
               );
             }}
@@ -377,6 +392,7 @@ export function SetlistTrackList({ tracks, onReorder, onRemove }: SetlistTrackLi
                           onRemove={onRemove}
                           outgoingTransition={outgoingTransition}
                           camelotLabel={camelotLabel}
+                          audioAnalyzing={audioAnalyzingIds?.has(track.spotify_id) ?? false}
                         />
                       )}
                     </Draggable>

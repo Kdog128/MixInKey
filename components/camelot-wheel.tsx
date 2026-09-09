@@ -84,7 +84,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
   const gap = 1.8;
 
   return (
-    <div className={cn("flex flex-col items-center gap-3", className)}>
+    <div className={cn("flex w-full max-w-full flex-col items-center gap-3", className)}>
       {/* Legend */}
       {!disabled && (keyA || keyB) && (
         <div className="flex flex-wrap justify-center gap-4 text-xs">
@@ -115,11 +115,11 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
         </div>
       )}
 
-      <div className="relative w-full max-w-[280px]">
+      <div className="relative w-full max-w-full md:max-w-[17.5rem]">
       <svg
         viewBox="0 0 400 400"
         className={cn(
-          "w-full",
+          "camelot-wheel-svg h-auto w-full",
           disabled && "opacity-30 grayscale pointer-events-none select-none"
         )}
         aria-label={disabled ? "Camelot wheel — BPM and key coming soon" : "Camelot wheel showing harmonic key relationships"}
@@ -225,6 +225,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 fontWeight="700"
                 fill={highlightB ? "#fff" : "rgba(255,255,255,0.65)"}
                 fontFamily="sans-serif"
+                className="camelot-label-primary"
               >
                 {seg.number}B
               </text>
@@ -236,6 +237,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 fontSize="8.5"
                 fill={highlightB ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.38)"}
                 fontFamily="sans-serif"
+                className="camelot-label-secondary"
               >
                 {seg.musicalB}
               </text>
@@ -250,6 +252,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 fontWeight="700"
                 fill={highlightA ? "#fff" : "rgba(255,255,255,0.55)"}
                 fontFamily="sans-serif"
+                className="camelot-label-primary"
               >
                 {seg.number}A
               </text>
@@ -261,6 +264,7 @@ export function CamelotWheel({ keyA, keyB, className, disabled, comingSoonNote }
                 fontSize="8"
                 fill={highlightA ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)"}
                 fontFamily="sans-serif"
+                className="camelot-label-secondary"
               >
                 {seg.musicalA}
               </text>

@@ -13,3 +13,8 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+
+# Copied from node_modules/essentia.js at Next startup
+public/essentia/essentia-wasm.web.js
+public/essentia/essentia-wasm.web.wasm
+public/essentia/essentia.js-core.umd.js

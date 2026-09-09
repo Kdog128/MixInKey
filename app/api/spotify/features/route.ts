@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getSpotifyToken } from "@/lib/spotify-auth";
 import { fetchTracksAudioAnalysis } from "@/lib/audio-analysis";
-import type { AudioAnalysis } from "@/lib/audio-analysis";
+import type { AudioAnalysis, AudioAnalysisSource } from "@/lib/audio-analysis";
 import type { CamelotKey } from "@/lib/camelot";
+import { needsEssentiaFallback, getCachedTracksAnalysis } from "@/lib/tracks-cache";
+import { createSupabaseServerClient } from "@/lib/supabase";
 
-const FEATURES_OVERALL_TIMEOUT_MS = 12000;
-const ANALYSIS_PENDING_MESSAGE =
-  "Still analyzing — try searching again in a moment";
+const FEATURES_OVERALL_TIMEOUT_MS = 6000;
 
 export interface TrackFeatures {
   popularity: number;
@@ -17,7 +17,9 @@ export interface TrackFeatures {
   bpm: number | null;
   musical_key: string | null;
   camelot: CamelotKey | null;
-  source: "reccobeats" | "getsongbpm" | "soundnet" | "musicbrainz" | null;
+  source: AudioAnalysisSource;
+  needs_resolution?: boolean;
+  needs_audio_analysis?: boolean;
 }
 
 interface ClientTrackInput {
@@ -32,6 +34,7 @@ interface ClientTrackInput {
   duration_ms?: number;
   explicit?: boolean;
   release_date?: string | null;
+  isrc?: string | null;
 }
 
 interface SpotifyTrackObject {
@@ -48,11 +51,87 @@ function needsSpotifyIdResolution(track: ClientTrackInput): boolean {
   return Boolean(track.name?.trim() && track.artist?.trim());
 }
 
+function normalizeTrackText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function isRealSpotifyId(spotifyId: string): boolean {
+  return !/^[0-9]+$/.test(spotifyId.trim());
+}
+
+async function resolveSpotifyIdFromNameArtistCache(
+  name: string,
+  artist: string
+): Promise<{ spotifyId: string; bpm: number; key: string | null } | null> {
+  const supabase = createSupabaseServerClient();
+  if (!supabase) return null;
+
+  const title = name.trim();
+  const artistName = artist.trim();
+  if (!title || !artistName) return null;
+
+  try {
+    console.log("[spotify/features] Name/artist cache lookup:", {
+      title,
+      artist: artistName,
+    });
+
+    const { data, error } = await supabase
+      .from("tracks_cache")
+      .select("spotify_id, artist, title, bpm, musical_key, camelot_label")
+      .ilike("title", title)
+      .ilike("artist", artistName)
+      .not("spotify_id", "match", "^[0-9]+$")
+      .not("bpm", "is", null)
+      .limit(10);
+
+    console.log("[spotify/features] Name/artist cache lookup response:", { data, error });
+
+    if (error) {
+      console.warn("[spotify/features] Name/artist cache lookup failed:", error.message);
+      return null;
+    }
+
+    const titleNorm = normalizeTrackText(title);
+    const artistNorm = normalizeTrackText(artistName);
+
+    const match = (data ?? []).find(
+      (row: {
+        spotify_id?: string;
+        artist?: string | null;
+        title?: string | null;
+        bpm?: number | null;
+        musical_key?: string | null;
+        camelot_label?: string | null;
+      }) => {
+        const spotifyId = row.spotify_id?.trim();
+        if (!spotifyId || !isRealSpotifyId(spotifyId)) return false;
+        if (row.bpm == null) return false;
+        return (
+          normalizeTrackText(row.title ?? "") === titleNorm &&
+          normalizeTrackText(row.artist ?? "") === artistNorm
+        );
+      }
+    );
+
+    if (!match?.spotify_id?.trim() || match.bpm == null) return null;
+
+    return {
+      spotifyId: match.spotify_id.trim(),
+      bpm: match.bpm,
+      key: match.musical_key ?? match.camelot_label ?? null,
+    };
+  } catch (err) {
+    console.warn("[spotify/features] Name/artist cache lookup error:", err);
+    return null;
+  }
+}
+
 async function searchSpotifyTrackId(
   artist: string,
   name: string,
   headers: Record<string, string>
-): Promise<string | null> {
+): Promise<{ id: string | null; rateLimited: boolean }> {
   const market = process.env.SPOTIFY_MARKET ?? "US";
   const query = `${artist} ${name}`.trim();
   const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1&market=${encodeURIComponent(market)}`;
@@ -61,7 +140,7 @@ async function searchSpotifyTrackId(
 
   if (res.status === 429) {
     console.warn("[spotify/features] Skipping Spotify ID resolution due to 429");
-    return null;
+    return { id: null, rateLimited: true };
   }
 
   if (!res.ok) {
@@ -70,17 +149,49 @@ async function searchSpotifyTrackId(
       status: res.status,
       body,
     });
-    return null;
+    return { id: null, rateLimited: false };
   }
 
   const data = (await res.json()) as { tracks?: { items?: Array<{ id: string }> } };
-  return data.tracks?.items?.[0]?.id ?? null;
+  return { id: data.tracks?.items?.[0]?.id ?? null, rateLimited: false };
 }
 
-async function resolveTracksWithSpotifyIds(
+async function applyNameArtistCacheToTracks(
+  tracks: ClientTrackInput[]
+): Promise<ClientTrackInput[]> {
+  return Promise.all(
+    tracks.map(async (track) => {
+      if (!needsSpotifyIdResolution(track)) {
+        return track;
+      }
+
+      const artist = track.artist!.trim();
+      const name = track.name!.trim();
+      const cacheHit = await resolveSpotifyIdFromNameArtistCache(name, artist);
+
+      if (!cacheHit) {
+        return track;
+      }
+
+      console.log("[features] Resolved iTunes track via name/artist cache hit:", {
+        spotifyId: cacheHit.spotifyId,
+        bpm: cacheHit.bpm,
+        key: cacheHit.key,
+      });
+
+      return {
+        ...track,
+        id: cacheHit.spotifyId,
+        spotify_id: cacheHit.spotifyId,
+      };
+    })
+  );
+}
+
+async function applySpotifySearchToTracks(
   tracks: ClientTrackInput[],
   headers: Record<string, string>
-): Promise<ClientTrackInput[]> {
+): Promise<Array<{ track: ClientTrackInput; needsResolution: boolean }>> {
   return Promise.all(
     tracks.map(async (track) => {
       if (!needsSpotifyIdResolution(track)) {
@@ -88,19 +199,28 @@ async function resolveTracksWithSpotifyIds(
           typeof track.spotify_id === "string" && track.spotify_id.trim()
             ? track.spotify_id.trim()
             : track.id?.trim() || "";
-        return spotifyId ? { ...track, id: spotifyId } : track;
+        return {
+          track: spotifyId ? { ...track, id: spotifyId } : track,
+          needsResolution: false,
+        };
       }
 
       const artist = track.artist!.trim();
       const name = track.name!.trim();
-      const resolvedId = await searchSpotifyTrackId(artist, name, headers);
+      const { id: resolvedId, rateLimited } = await searchSpotifyTrackId(artist, name, headers);
 
-      if (!resolvedId) {
-        return track;
+      if (resolvedId) {
+        console.log("[spotify/features] Resolved Spotify ID:", { artist, name, resolvedId });
+        return {
+          track: { ...track, id: resolvedId, spotify_id: resolvedId },
+          needsResolution: false,
+        };
       }
 
-      console.log("[spotify/features] Resolved Spotify ID:", { artist, name, resolvedId });
-      return { ...track, id: resolvedId, spotify_id: resolvedId };
+      return {
+        track,
+        needsResolution: rateLimited,
+      };
     })
   );
 }
@@ -112,24 +232,33 @@ async function fetchArtistGenres(
   const artistGenres: Record<string, string[]> = {};
   if (artistIds.length === 0) return artistGenres;
 
-  const artistsRes = await fetch(
-    `https://api.spotify.com/v1/artists?ids=${artistIds.map(encodeURIComponent).join(",")}`,
-    { headers, cache: "no-store" }
+  const artists = await Promise.all(
+    artistIds.map(async (id) => {
+      try {
+        const artistsRes = await fetch(
+          `https://api.spotify.com/v1/artists/${encodeURIComponent(id)}`,
+          { headers, cache: "no-store" }
+        );
+
+        if (!artistsRes.ok) {
+          const body = await artistsRes.text().catch(() => "");
+          console.error("[spotify/features] Artist fetch failed:", {
+            id,
+            status: artistsRes.status,
+            body,
+          });
+          return null;
+        }
+
+        return (await artistsRes.json()) as { id: string; genres: string[] };
+      } catch (err) {
+        console.error("[spotify/features] Artist fetch error:", { id, err });
+        return null;
+      }
+    })
   );
 
-  if (!artistsRes.ok) {
-    const body = await artistsRes.text().catch(() => "");
-    console.error("[spotify/features] Artists fetch failed:", {
-      status: artistsRes.status,
-      body,
-    });
-    return artistGenres;
-  }
-
-  const artistsData = (await artistsRes.json()) as {
-    artists: Array<{ id: string; genres: string[] } | null>;
-  };
-  for (const a of artistsData.artists ?? []) {
+  for (const a of artists) {
     if (a?.id) artistGenres[a.id] = a.genres ?? [];
   }
   return artistGenres;
@@ -141,33 +270,48 @@ async function resolveSpotifyFeatures(
 ): Promise<Omit<TrackFeatures, "bpm" | "musical_key" | "camelot" | "source">[]> {
   const idList = tracks.map((t) => t.id).filter(Boolean);
 
-  let spotifyTracks: Array<SpotifyTrackObject | null> = [];
-  const tracksUrl = `https://api.spotify.com/v1/tracks?ids=${idList.map(encodeURIComponent).join(",")}`;
-  const tracksRes = await fetch(tracksUrl, { headers, cache: "no-store" });
+  const clientTrackById = new Map(tracks.filter((t) => t.id).map((t) => [t.id, t]));
 
-  if (tracksRes.ok) {
-    const tracksData = (await tracksRes.json()) as { tracks: Array<SpotifyTrackObject | null> };
-    spotifyTracks = tracksData.tracks ?? [];
-    console.log("[spotify/features] Tracks endpoint succeeded for", idList.length, "ids");
-  } else {
-    const body = await tracksRes.text().catch(() => "");
-    console.warn("[spotify/features] Tracks endpoint failed, using search metadata:", {
-      status: tracksRes.status,
-      body,
-    });
-    spotifyTracks = tracks.map((t) =>
-      t.id
-        ? {
-            id: t.id,
-            popularity: t.popularity ?? 0,
-            duration_ms: t.duration_ms ?? 0,
-            explicit: t.explicit ?? false,
-            album: { release_date: t.release_date ?? "" },
-            artists: t.artist_id ? [{ id: t.artist_id }] : [],
-          }
-        : null
-    );
-  }
+  const spotifyTracks: Array<SpotifyTrackObject | null> = await Promise.all(
+    idList.map(async (id) => {
+      try {
+        const tracksRes = await fetch(
+          `https://api.spotify.com/v1/tracks/${encodeURIComponent(id)}`,
+          { headers, cache: "no-store" }
+        );
+
+        if (tracksRes.ok) {
+          return (await tracksRes.json()) as SpotifyTrackObject;
+        }
+
+        const body = await tracksRes.text().catch(() => "");
+        console.warn("[spotify/features] Track fetch failed, using search metadata:", {
+          id,
+          status: tracksRes.status,
+          body,
+        });
+      } catch (err) {
+        console.warn("[spotify/features] Track fetch error, using search metadata:", {
+          id,
+          err,
+        });
+      }
+
+      const t = clientTrackById.get(id);
+      if (!t) return null;
+
+      return {
+        id: t.id,
+        popularity: t.popularity ?? 0,
+        duration_ms: t.duration_ms ?? 0,
+        explicit: t.explicit ?? false,
+        album: { release_date: t.release_date ?? "" },
+        artists: t.artist_id ? [{ id: t.artist_id }] : [],
+      };
+    })
+  );
+
+  console.log("[spotify/features] Tracks resolved for", spotifyTracks.filter(Boolean).length, "of", idList.length, "ids");
 
   const artistIdSet = new Set<string>();
   for (const t of spotifyTracks) {
@@ -226,8 +370,9 @@ function fallbackSpotifyFeatures(
 
 function mergeTrackFeatures(
   tracks: ClientTrackInput[],
-  spotifyFeatures: Omit<TrackFeatures, "bpm" | "musical_key" | "camelot" | "source">[],
-  audioResults: AudioAnalysis[]
+  spotifyFeatures: Omit<TrackFeatures, "bpm" | "musical_key" | "camelot" | "source" | "needs_resolution">[],
+  audioResults: AudioAnalysis[],
+  needsResolutionFlags: boolean[]
 ): TrackFeatures[] {
   return spotifyFeatures.map((spotify, i) => {
     const audio = audioResults[i] ?? emptyAudioAnalysis();
@@ -244,6 +389,10 @@ function mergeTrackFeatures(
       musical_key: audio.musicalKey,
       camelot: audio.camelot,
       source: audio.source,
+      ...(needsResolutionFlags[i] ? { needs_resolution: true } : {}),
+      ...(needsEssentiaFallback(audio) && tracks[i]?.id && !needsResolutionFlags[i]
+        ? { needs_audio_analysis: true }
+        : {}),
     };
   });
 }
@@ -253,10 +402,12 @@ async function resolveTrackFeatures(
   headers: Record<string, string>
 ): Promise<{
   features: TrackFeatures[];
-  partial: boolean;
-  message?: string;
+  timedOut: boolean;
 }> {
-  const resolvedTracks = await resolveTracksWithSpotifyIds(tracks, headers);
+  const cacheResolvedTracks = await applyNameArtistCacheToTracks(tracks);
+  const resolutionOutcomes = await applySpotifySearchToTracks(cacheResolvedTracks, headers);
+  const resolvedTracks = resolutionOutcomes.map((outcome) => outcome.track);
+  const needsResolutionFlags = resolutionOutcomes.map((outcome) => outcome.needsResolution);
   const spotifyPromise = resolveSpotifyFeatures(resolvedTracks, headers);
   const audioPromise = fetchTracksAudioAnalysis(
     resolvedTracks.map((t) => ({
@@ -265,6 +416,8 @@ async function resolveTrackFeatures(
       duration_ms: t.duration_ms,
       spotify_id: t.id,
       artwork_url: t.image ?? null,
+      isrc: t.isrc ?? null,
+      release_date: t.release_date ?? null,
     }))
   );
 
@@ -273,10 +426,10 @@ async function resolveTrackFeatures(
 
   void spotifyPromise.then((result) => {
     spotifyFeatures = result;
-  });
+  }).catch(() => undefined);
   void audioPromise.then((result) => {
     audioResults = result;
-  });
+  }).catch(() => undefined);
 
   await Promise.race([
     Promise.allSettled([spotifyPromise, audioPromise]),
@@ -287,26 +440,31 @@ async function resolveTrackFeatures(
   const audioTimedOut = audioResults === undefined;
 
   if (spotifyTimedOut || audioTimedOut) {
-    console.warn("[spotify/features] Overall timeout — returning partial results:", {
+    console.warn("[spotify/features] Overall timeout — returning available fields:", {
       timeoutMs: FEATURES_OVERALL_TIMEOUT_MS,
       spotifyTimedOut,
       audioTimedOut,
     });
+    // Keep provider work alive to write cache, but do not hold the HTTP response.
+    after(() => Promise.allSettled([spotifyPromise, audioPromise]));
   }
 
   const spotify = spotifyFeatures ?? fallbackSpotifyFeatures(resolvedTracks);
-  const audio = audioResults ?? tracks.map(() => emptyAudioAnalysis());
-  const features = mergeTrackFeatures(resolvedTracks, spotify, audio);
-
+  let audio = audioResults;
   if (audioTimedOut) {
-    return {
-      features,
-      partial: true,
-      message: ANALYSIS_PENDING_MESSAGE,
-    };
+    const cacheMap = await getCachedTracksAnalysis(
+      resolvedTracks.map((track) => track.id).filter((id): id is string => Boolean(id))
+    );
+    audio = resolvedTracks.map((track) => {
+      const cached = track.id ? cacheMap.get(track.id) : undefined;
+      return cached ?? emptyAudioAnalysis();
+    });
+  } else {
+    audio = audioResults ?? resolvedTracks.map(() => emptyAudioAnalysis());
   }
+  const features = mergeTrackFeatures(resolvedTracks, spotify, audio, needsResolutionFlags);
 
-  return { features, partial: false };
+  return { features, timedOut: spotifyTimedOut || audioTimedOut };
 }
 
 export async function POST(request: NextRequest) {
@@ -318,12 +476,12 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await getSpotifyToken();
-    const { features, partial, message } = await resolveTrackFeatures(tracks, {
+    const { features, timedOut } = await resolveTrackFeatures(tracks, {
       Authorization: `Bearer ${token}`,
     });
     return NextResponse.json({
       features,
-      ...(partial ? { partial: true, message } : {}),
+      ...(timedOut ? { timed_out: true } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";
@@ -344,13 +502,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const token = await getSpotifyToken();
-    const { features, partial, message } = await resolveTrackFeatures(
+    const { features, timedOut } = await resolveTrackFeatures(
       idList.map((id) => ({ id })),
       { Authorization: `Bearer ${token}` }
     );
     return NextResponse.json({
       features,
-      ...(partial ? { partial: true, message } : {}),
+      ...(timedOut ? { timed_out: true } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Internal error";

@@ -127,11 +127,11 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
-    @apply font-sans bg-background;
+    @apply font-sans bg-background max-w-full;
+  }
+  body {
+    @apply bg-background text-foreground max-w-full overflow-x-clip;
   }
 }
 
@@ -296,4 +296,14 @@
     rgba(168, 85, 247, 0.12) 100%
   );
   box-shadow: 0 0 28px rgba(168, 85, 247, 0.35);
+}
+
+@media (max-width: 767px) {
+  .camelot-wheel-svg .camelot-label-primary {
+    font-size: 13px;
+  }
+
+  .camelot-wheel-svg .camelot-label-secondary {
+    font-size: 10px;
+  }
 }

@@ -4,7 +4,7 @@ const ACOUSTICBRAINZ_BASE = (
   process.env.ACOUSTICBRAINZ_API_URL ?? "https://acousticbrainz.org/api/v1"
 ).replace(/\/$/, "");
 
-const ACOUSTICBRAINZ_TIMEOUT_MS = 3000;
+const ACOUSTICBRAINZ_TIMEOUT_MS = 800;
 
 export interface AcousticBrainzAnalysis {
   bpm: number | null;

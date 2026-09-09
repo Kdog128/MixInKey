@@ -1,7 +1,8 @@
 import { Analytics } from '@vercel/analytics/next'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { headers } from 'next/headers'
+import { AppMobileNav } from '@/components/app-mobile-nav'
 import { AppShell } from '@/components/app-shell'
 import { AppSidebar } from '@/components/app-sidebar'
 import './globals.css'
@@ -11,6 +12,12 @@ const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
 })
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
 
 export const metadata: Metadata = {
   title: 'DJ Mix Compatibility',
@@ -47,6 +54,7 @@ export default async function RootLayout({
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} bg-background`}>
       <body className="font-sans antialiased">
         <AppSidebar initialPathname={initialPathname} />
+        <AppMobileNav initialPathname={initialPathname} />
         <AppShell>{children}</AppShell>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

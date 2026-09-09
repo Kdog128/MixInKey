@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Save, Disc3, FolderOpen, Trash2, FilePlus, ChevronDown, CheckCircle2, Pencil, ListMusic } from "lucide-react";
 import { TrackSearch, type TrackResult } from "@/components/track-search";
 import { SetlistTrackList } from "@/components/setlist-track-list";
+import { SetlistRecommendedNext, type RecommendedNextTrack } from "@/components/setlist-recommended-next";
 import { EnergyArc } from "@/components/energy-arc";
 import { PageHeader } from "@/components/page-header";
 import { SourceBadgesFooter } from "@/components/source-badges-footer";
@@ -20,6 +21,7 @@ import {
   type SetlistTrack,
 } from "@/lib/setlist";
 import type { TrackFeatures } from "@/components/compatibility-card";
+import { parseMusicalKeyString } from "@/lib/camelot";
 import {
   DEFAULT_EXAMPLE_TRACK,
   pickExampleTrack,
@@ -36,28 +38,43 @@ import {
   cohesiveCardStyle,
   cohesiveSurfaceStyle,
 } from "@/lib/ui-surfaces";
+import { analyzeTrackWithEssentia } from "@/lib/essentia-client";
 import { useDocumentVisible } from "@/lib/use-document-visible";
 import { cn } from "@/lib/utils";
 
-async function fetchTrackFeatures(track: TrackResult): Promise<Pick<TrackFeatures, "bpm" | "musical_key" | "camelot">> {
-  const res = await fetch("/api/spotify/features", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tracks: [track] }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.features?.[0]) {
-    throw new Error(data.error ?? "Failed to fetch track data");
-  }
-  if (data.partial) {
-    throw new Error(data.message ?? "Still analyzing — try searching again in a moment");
-  }
-  const features = data.features[0] as TrackFeatures;
-  return {
-    bpm: features.bpm,
-    musical_key: features.musical_key,
-    camelot: features.camelot,
+async function fetchTrackFeatures(track: TrackResult): Promise<TrackFeatures> {
+  const fallback: TrackFeatures = {
+    popularity: track.popularity ?? 0,
+    duration_ms: track.duration_ms ?? 0,
+    explicit: track.explicit ?? false,
+    genres: [],
+    release_date: track.release_date ?? null,
+    bpm: null,
+    musical_key: null,
+    camelot: null,
+    source: null,
+    needs_audio_analysis: Boolean(track.id),
   };
+
+  try {
+    const res = await fetch("/api/spotify/features", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tracks: [track] }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      features?: TrackFeatures[];
+      error?: string;
+    };
+    if (data.features?.[0]) return data.features[0];
+    console.warn("[features] No setlist features in response, using unavailable state:", {
+      ok: res.ok,
+      error: data.error,
+    });
+  } catch (err) {
+    console.warn("[features] Setlist request failed, using unavailable state:", err);
+  }
+  return fallback;
 }
 
 interface SavedSetlist {
@@ -108,6 +125,7 @@ export default function SetlistPage() {
   const [exampleTrack, setExampleTrack] =
     useState<ExampleTrackPlaceholder>(DEFAULT_EXAMPLE_TRACK);
   const documentVisible = useDocumentVisible();
+  const [audioAnalyzingIds, setAudioAnalyzingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setExampleTrack((current) => pickExampleTrack(current));
@@ -210,6 +228,42 @@ export default function SetlistPage() {
     setTracks(next);
   }, []);
 
+  const applyBackgroundAnalysis = useCallback((track: TrackResult) => {
+    if (!track.id) return;
+    setAudioAnalyzingIds((prev) => {
+      const next = new Set(prev);
+      next.add(track.id);
+      return next;
+    });
+    void analyzeTrackWithEssentia(track)
+      .then(async () => {
+        const nextFeatures = await fetchTrackFeatures(track);
+        const current = getSetlistTracks();
+        if (!current.some((item) => item.spotify_id === track.id)) return;
+        persistTracks(
+          current.map((item) =>
+            item.spotify_id === track.id
+              ? {
+                  ...item,
+                  bpm: nextFeatures.bpm,
+                  original_bpm: item.original_bpm ?? nextFeatures.bpm,
+                  musical_key: nextFeatures.musical_key,
+                  camelot_label: nextFeatures.camelot?.label ?? item.camelot_label,
+                }
+              : item
+          )
+        );
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        setAudioAnalyzingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(track.id);
+          return next;
+        });
+      });
+  }, [persistTracks]);
+
   const handleAddTrack = useCallback(async (track: TrackResult) => {
     setAdding(true);
     setError(null);
@@ -222,6 +276,12 @@ export default function SetlistPage() {
       if (added) {
         setMessage(`Added "${track.name}" to set`);
         setSearchKey((k) => k + 1);
+        if (
+          features.needs_audio_analysis &&
+          (features.bpm == null || !features.musical_key)
+        ) {
+          applyBackgroundAnalysis(track);
+        }
       } else {
         setError(`"${track.name}" is already in the set`);
       }
@@ -229,6 +289,39 @@ export default function SetlistPage() {
       setError(err instanceof Error ? err.message : "Failed to add track");
     } finally {
       setAdding(false);
+    }
+  }, [applyBackgroundAnalysis, persistTracks]);
+
+  const handleAddRecommended = useCallback((track: RecommendedNextTrack) => {
+    setError(null);
+    setMessage(null);
+    const camelot = parseMusicalKeyString(track.camelot);
+    const entry = buildSetlistTrack(
+      {
+        id: track.spotify_id,
+        name: track.name,
+        artist: track.artist,
+        artist_id: null,
+        album: "",
+        image: track.image,
+        preview_url: null,
+        duration_ms: 0,
+        popularity: 0,
+        explicit: false,
+        release_date: null,
+      },
+      {
+        bpm: track.bpm,
+        musical_key: camelot?.musicalKey ?? null,
+        camelot,
+      }
+    );
+    const { tracks: updated, added } = addTrackToSetlist(entry);
+    persistTracks(updated);
+    if (added) {
+      setMessage(`Added "${track.name}" to set`);
+    } else {
+      setError(`"${track.name}" is already in the set`);
     }
   }, [persistTracks]);
 
@@ -500,7 +593,10 @@ export default function SetlistPage() {
           />
 
           <div
-            className={cn(COHESIVE_INNER_CARD_CLASS, "flex flex-wrap items-center justify-between gap-4 px-4 py-3")}
+            className={cn(
+              COHESIVE_INNER_CARD_CLASS,
+              "flex min-w-0 max-w-full flex-col gap-3 px-3 py-3 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-4"
+            )}
             style={cohesiveSurfaceStyle()}
           >
             <div className="flex flex-wrap items-center gap-4">
@@ -518,7 +614,7 @@ export default function SetlistPage() {
                 <span className="text-xs text-muted-foreground/60 ml-1">(~6 min/track)</span>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="relative" ref={savedSetsRef}>
                 <button
                   type="button"
@@ -708,9 +804,17 @@ export default function SetlistPage() {
           <div className="px-5 pb-4 md:px-6">
             <SetlistTrackList
               tracks={tracks}
+              audioAnalyzingIds={audioAnalyzingIds}
               onReorder={handleReorder}
               onRemove={handleRemove}
             />
+            {tracks.length > 0 && (
+              <SetlistRecommendedNext
+                lastTrack={tracks[tracks.length - 1]}
+                excludeIds={tracks.map((track) => track.spotify_id)}
+                onAdd={handleAddRecommended}
+              />
+            )}
           </div>
 
           <div className="px-4 pb-3 pt-1">

@@ -22,6 +22,7 @@ export interface TrackResult {
   popularity: number;
   explicit: boolean;
   release_date: string | null;
+  isrc?: string | null;
 }
 
 interface TrackSearchProps {
@@ -41,6 +42,7 @@ interface TrackSearchProps {
   animatePlaceholder?: boolean;
   /** Rotating title + artist hint with crossfade (Set Planner Add Track). */
   animatedPlaceholderExample?: { title: string; artist: string };
+  audioAnalyzing?: boolean;
   /** Notifies parent when the results dropdown opens or closes. */
   onOpenChange?: (isOpen: boolean) => void;
 }
@@ -69,6 +71,7 @@ export function TrackSearch({
   animatePlaceholder = false,
   animatedPlaceholderExample,
   onOpenChange,
+  audioAnalyzing = false,
 }: TrackSearchProps) {
   const [query, setQuery] = useState("");
   const [displayPlaceholder, setDisplayPlaceholder] = useState(placeholder);
@@ -212,6 +215,7 @@ export function TrackSearch({
         popularity: 0,
         explicit: false,
         release_date: null,
+        isrc: null,
       }));
       setResults(tracks);
       setOpen(true);
@@ -353,7 +357,7 @@ export function TrackSearch({
 
   const selectedTrackLayoutClass = cn(
     "flex items-center rounded-xl border border-border min-w-0 w-full",
-    fieldHeightClass,
+    audioAnalyzing ? "min-h-14 py-2" : fieldHeightClass,
     compact ? "px-2.5 py-2" : "px-3 py-2.5"
   );
 
@@ -420,6 +424,12 @@ export function TrackSearch({
               >
                 {selectedTrack.album || "\u00A0"}
               </p>
+              {audioAnalyzing && (
+                <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Loader2 className="size-3 shrink-0 animate-spin" />
+                  Analyzing audio…
+                </p>
+              )}
             </div>
             <div className="ml-1 flex flex-shrink-0 items-center gap-1.5">
               <button

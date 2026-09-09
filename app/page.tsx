@@ -16,6 +16,7 @@ import {
   cohesiveCardStyle,
 } from "@/lib/ui-surfaces";
 import { COMPATIBILITY_NAV_RESET_EVENT } from "@/lib/compatibility-nav-reset";
+import { analyzeTrackWithEssentia } from "@/lib/essentia-client";
 import {
   DEFAULT_EXAMPLE_ARTIST_PAIR,
   PLACEHOLDER_ROTATE_MS,
@@ -27,13 +28,49 @@ import { cn } from "@/lib/utils";
 const SEARCH_PANEL_HELPER_TEXT =
   "Search two Spotify tracks to analyze BPM, key, and Camelot compatibility.";
 
+function unavailableTrackFeatures(track: TrackResult): TrackFeatures {
+  return {
+    popularity: track.popularity ?? 0,
+    duration_ms: track.duration_ms ?? 0,
+    explicit: track.explicit ?? false,
+    genres: [],
+    release_date: track.release_date ?? null,
+    bpm: null,
+    musical_key: null,
+    camelot: null,
+    source: null,
+    needs_audio_analysis: Boolean(track.id),
+  };
+}
+
+function hasCoreFeatures(features: TrackFeatures | null | undefined): boolean {
+  return features != null && features.bpm != null && Boolean(features.musical_key);
+}
+
+function keepResolvedCore(
+  previous: TrackFeatures | null,
+  incoming: TrackFeatures
+): TrackFeatures {
+  if (hasCoreFeatures(previous) && !hasCoreFeatures(incoming) && previous) {
+    return {
+      ...incoming,
+      bpm: previous.bpm,
+      musical_key: previous.musical_key,
+      camelot: previous.camelot,
+      source: previous.source,
+      needs_audio_analysis: false,
+    };
+  }
+  return incoming;
+}
+
 /** Search inputs area inside the unified search card. */
 const SEARCH_PANEL_BODY_CLASS =
-  "flex flex-col gap-2 px-6 pt-6";
+  "flex flex-col gap-2 px-4 pt-5 md:px-6 md:pt-6";
 
 /** Fixed-height helper row — same height for empty and single-track states. */
 const SEARCH_PANEL_HELPER_ROW_CLASS =
-  "flex min-h-[2.75rem] shrink-0 items-center justify-center px-1";
+  "flex min-h-[2.75rem] w-full min-w-0 shrink-0 items-center justify-center px-1";
 
 /** Page title pill above the search card. */
 const COMPATIBILITY_TITLE_PILL_CLASS =
@@ -63,16 +100,22 @@ export default function Home() {
   );
   const [openSearchSlot, setOpenSearchSlot] = useState<"A" | "B" | null>(null);
   const [searchResetKey, setSearchResetKey] = useState(0);
+  const [audioAnalyzingA, setAudioAnalyzingA] = useState(false);
+  const [audioAnalyzingB, setAudioAnalyzingB] = useState(false);
   const scrollAnchorYRef = useRef<number | null>(null);
+  const analysisGenRef = useRef(0);
   const documentVisible = useDocumentVisible();
 
   const resetCompatibilityPage = useCallback(() => {
+    analysisGenRef.current += 1;
     setTrackA(null);
     setTrackB(null);
     setAnalysis(emptyAnalysis);
     setSetlistMessage(null);
     setOpenSearchSlot(null);
     setSearchResetKey((key) => key + 1);
+    setAudioAnalyzingA(false);
+    setAudioAnalyzingB(false);
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
@@ -128,33 +171,101 @@ export default function Home() {
   }, [trackA, trackB]);
 
   const analyze = useCallback(async (a: TrackResult, b: TrackResult) => {
+    const gen = ++analysisGenRef.current;
+    setAudioAnalyzingA(false);
+    setAudioAnalyzingB(false);
     setAnalysis((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const res = await fetch("/api/spotify/features", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tracks: [a, b] }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.features) {
-        throw new Error(data.error ?? "Failed to fetch track data");
+
+    let requestSeq = 0;
+    let appliedSeq = 0;
+
+    async function fetchFeatures() {
+      const seq = ++requestSeq;
+      try {
+        const res = await fetch("/api/spotify/features", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tracks: [a, b] }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          features?: TrackFeatures[];
+          error?: string;
+          timed_out?: boolean;
+          partial?: boolean;
+        };
+        const fA = data.features?.[0];
+        const fB = data.features?.[1];
+        if (fA && fB) return { seq, features: [fA, fB] as const, timedOut: Boolean(data.timed_out) };
+        console.warn("[features] No feature pair in response, using unavailable state:", {
+          seq,
+          ok: res.ok,
+          error: data.error,
+          timedOut: data.timed_out,
+          partial: data.partial,
+        });
+      } catch (err) {
+        console.warn("[features] Request failed, using unavailable state:", err);
       }
-      if (data.partial) {
-        throw new Error(
-          data.message ?? "Still analyzing — try searching again in a moment"
-        );
+      return {
+        seq,
+        features: [unavailableTrackFeatures(a), unavailableTrackFeatures(b)] as const,
+        timedOut: true,
+      };
+    }
+
+    function applyFeatures(seq: number, fA: TrackFeatures, fB: TrackFeatures) {
+      if (gen !== analysisGenRef.current) return;
+      if (seq < appliedSeq) {
+        console.log("[features] Dropping out-of-order response:", { seq, appliedSeq });
+        return;
       }
-      const [fA, fB] = data.features;
-      if (!fA || !fB) {
-        throw new Error("Track data unavailable for one or both tracks");
-      }
-      setAnalysis({
+      appliedSeq = seq;
+      setAnalysis((prev) => ({
         loading: false,
-        featuresA: fA,
-        featuresB: fB,
         error: null,
+        featuresA: keepResolvedCore(prev.featuresA, fA),
+        featuresB: keepResolvedCore(prev.featuresB, fB),
+      }));
+    }
+
+    try {
+      const initial = await fetchFeatures();
+      applyFeatures(initial.seq, initial.features[0], initial.features[1]);
+      if (gen !== analysisGenRef.current) return;
+
+      const [fA, fB] = initial.features;
+      const pending: Promise<boolean>[] = [];
+
+      const runBackgroundAnalysis = (
+        track: TrackResult,
+        features: TrackFeatures,
+        setAnalyzing: (value: boolean) => void
+      ) => {
+        if (!track.id) return;
+        if (hasCoreFeatures(features)) return;
+        if (!features.needs_audio_analysis) return;
+        setAnalyzing(true);
+        pending.push(
+          analyzeTrackWithEssentia(track).finally(() => {
+            if (gen === analysisGenRef.current) setAnalyzing(false);
+          })
+        );
+      };
+
+      runBackgroundAnalysis(a, fA, setAudioAnalyzingA);
+      runBackgroundAnalysis(b, fB, setAudioAnalyzingB);
+
+      if (pending.length === 0) return;
+
+      void Promise.all(pending).then(async () => {
+        if (gen !== analysisGenRef.current) return;
+        const refreshed = await fetchFeatures();
+        applyFeatures(refreshed.seq, refreshed.features[0], refreshed.features[1]);
       });
     } catch (err) {
+      if (gen !== analysisGenRef.current) return;
+      setAudioAnalyzingA(false);
+      setAudioAnalyzingB(false);
       setAnalysis((prev) => ({
         ...prev,
         loading: false,
@@ -178,11 +289,17 @@ export default function Home() {
   }
 
   function handleClearA() {
+    analysisGenRef.current += 1;
+    setAudioAnalyzingA(false);
+    setAudioAnalyzingB(false);
     setTrackA(null);
     setAnalysis(emptyAnalysis);
   }
 
   function handleClearB() {
+    analysisGenRef.current += 1;
+    setAudioAnalyzingA(false);
+    setAudioAnalyzingB(false);
     setTrackB(null);
     setAnalysis(emptyAnalysis);
   }
@@ -213,7 +330,7 @@ export default function Home() {
 
   return (
     <main className="font-sans">
-      <div className="relative z-10 mx-auto w-full max-w-2xl px-4 pb-8">
+      <div className="relative z-10 mx-auto w-full min-w-0 max-w-2xl overflow-x-clip px-4 pb-8">
         <div
           className={cn(
             "flex w-full flex-col gap-5",
@@ -273,6 +390,7 @@ export default function Home() {
                       musicalKey={analysis.featuresA?.musical_key}
                       onOpenChange={handleTrackAOpenChange}
                       enableFavoritesFilter
+                      audioAnalyzing={audioAnalyzingA}
                     />
                   </div>
 
@@ -295,6 +413,7 @@ export default function Home() {
                       musicalKey={analysis.featuresB?.musical_key}
                       onOpenChange={handleTrackBOpenChange}
                       enableFavoritesFilter
+                      audioAnalyzing={audioAnalyzingB}
                     />
                   </div>
                 </div>
@@ -307,11 +426,11 @@ export default function Home() {
                     )}
                   >
                     {bothTracksEmpty ? (
-                      <p className="empty-state-gradient-text text-center text-xs leading-relaxed">
+                      <p className="empty-state-gradient-text min-w-0 max-w-full text-pretty px-1 text-center text-xs leading-relaxed">
                         {SEARCH_PANEL_HELPER_TEXT}
                       </p>
                     ) : (
-                      <p className="text-center text-xs text-muted-foreground/50">
+                      <p className="min-w-0 max-w-full text-pretty px-1 text-center text-xs text-muted-foreground/50">
                         {trackA
                           ? "Now search for Track 2 to see the compatibility report"
                           : "Now search for Track 1 to see the compatibility report"}
@@ -324,7 +443,7 @@ export default function Home() {
               {!hasResults && (
                 <div
                   className={cn(
-                    "border-t border-white/10 px-6 pt-4 pb-5",
+                    "border-t border-white/10 px-4 pt-4 pb-5 md:px-6",
                     isSearchDropdownOpen ? searchPanelDimClass : searchPanelFullClass
                   )}
                 >
@@ -344,6 +463,12 @@ export default function Home() {
                   featuresB={analysis.featuresB!}
                   trackAId={trackA.id}
                   trackBId={trackB.id}
+                  trackAName={trackA.name}
+                  trackAArtist={trackA.artist}
+                  trackAImage={trackA.image}
+                  trackBName={trackB.name}
+                  trackBArtist={trackB.artist}
+                  trackBImage={trackB.image}
                   onAddToSetA={() => handleAddToSet("A")}
                   onAddToSetB={() => handleAddToSet("B")}
                 />

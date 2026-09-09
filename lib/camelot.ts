@@ -465,62 +465,79 @@ export function getReleaseDateCompatibility(date1: string | null, date2: string 
   return 35;
 }
 
-/** Overall score from Spotify metadata, optionally including BPM + key. */
-export function getOverallCompatibilityFromTrackData(
-  pop1: number, pop2: number,
-  ms1: number, ms2: number,
-  genres1: string[], genres2: string[],
-  release1: string | null, release2: string | null,
-  bpm1: number | null = null, bpm2: number | null = null,
-  keyScore: number | null = null,
-): number {
-  const popScore = getPopularityCompatibility(pop1, pop2);
-  const durScore = getDurationCompatibility(ms1, ms2);
-  const genreScore = getGenreCompatibility(genres1, genres2);
-  const releaseScore = getReleaseDateCompatibility(release1, release2);
+/** Overall score from available factors. BPM and key are required; others are omitted and weights renormalized. */
+const COMPATIBILITY_FACTOR_WEIGHTS = {
+  key: 0.25,
+  bpm: 0.25,
+  popularity: 0.15,
+  duration: 0.15,
+  genre: 0.10,
+  release: 0.10,
+} as const;
 
-  const hasBpm = bpm1 != null && bpm2 != null;
-  const hasKey = keyScore != null;
+export const COMPATIBILITY_FACTOR_TOTAL = 6;
 
-  if (hasBpm && hasKey) {
-    const bpmScore = getBpmCompatibility(bpm1, bpm2);
-    return Math.round(
-      keyScore * 0.25 +
-      bpmScore * 0.25 +
-      popScore * 0.15 +
-      durScore * 0.15 +
-      genreScore * 0.10 +
-      releaseScore * 0.10
-    );
+export interface AvailableCompatibilityFactors {
+  keyScore: number;
+  bpmScore: number;
+  popularityScore?: number | null;
+  durationScore?: number | null;
+  genreScore?: number | null;
+  releaseScore?: number | null;
+}
+
+export interface OverallCompatibilityResult {
+  score: number;
+  factorCount: number;
+  weightingText: string;
+}
+
+export function getOverallCompatibilityFromAvailableFactors(
+  factors: AvailableCompatibilityFactors
+): OverallCompatibilityResult {
+  const parts: Array<{ label: string; score: number; weight: number }> = [
+    { label: "key", score: factors.keyScore, weight: COMPATIBILITY_FACTOR_WEIGHTS.key },
+    { label: "BPM", score: factors.bpmScore, weight: COMPATIBILITY_FACTOR_WEIGHTS.bpm },
+  ];
+
+  if (factors.popularityScore != null) {
+    parts.push({
+      label: "popularity",
+      score: factors.popularityScore,
+      weight: COMPATIBILITY_FACTOR_WEIGHTS.popularity,
+    });
+  }
+  if (factors.durationScore != null) {
+    parts.push({
+      label: "duration",
+      score: factors.durationScore,
+      weight: COMPATIBILITY_FACTOR_WEIGHTS.duration,
+    });
+  }
+  if (factors.genreScore != null) {
+    parts.push({
+      label: "genre",
+      score: factors.genreScore,
+      weight: COMPATIBILITY_FACTOR_WEIGHTS.genre,
+    });
+  }
+  if (factors.releaseScore != null) {
+    parts.push({
+      label: "release",
+      score: factors.releaseScore,
+      weight: COMPATIBILITY_FACTOR_WEIGHTS.release,
+    });
   }
 
-  if (hasBpm) {
-    const bpmScore = getBpmCompatibility(bpm1, bpm2);
-    return Math.round(
-      bpmScore * 0.30 +
-      popScore * 0.20 +
-      durScore * 0.20 +
-      genreScore * 0.15 +
-      releaseScore * 0.15
-    );
-  }
-
-  if (hasKey) {
-    return Math.round(
-      keyScore * 0.30 +
-      popScore * 0.20 +
-      durScore * 0.20 +
-      genreScore * 0.15 +
-      releaseScore * 0.15
-    );
-  }
-
-  return Math.round(
-    popScore * 0.30 +
-    durScore * 0.25 +
-    genreScore * 0.25 +
-    releaseScore * 0.20
+  const weightSum = parts.reduce((sum, part) => sum + part.weight, 0);
+  const score = Math.round(
+    parts.reduce((sum, part) => sum + part.score * (part.weight / weightSum), 0)
   );
+  const weightingText = `Weighted: ${parts
+    .map((part) => `${part.label} (${Math.round((part.weight / weightSum) * 100)}%)`)
+    .join(", ")}`;
+
+  return { score, factorCount: parts.length, weightingText };
 }
 
 /** Legacy function kept for future audio-features support. */
