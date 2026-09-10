@@ -7,7 +7,7 @@ import {
   NEUTRAL_FIELD_SURFACE_CLASS,
   NEUTRAL_SURFACE_STYLE,
 } from "@/lib/ui-surfaces";
-import { isFavorite, toggleFavorite, getFavorites, enrichFavoritesWithImages } from "@/lib/favorites";
+import { isFavorite, toggleFavorite, enrichFavoritesWithImages, hydrateFavoritesFromServer } from "@/lib/favorites";
 
 export interface TrackResult {
   id: string;
@@ -202,7 +202,7 @@ export function TrackSearch({
     setQuery("");
     setLoading(true);
     try {
-      const favorites = await enrichFavoritesWithImages(getFavorites());
+      const favorites = await enrichFavoritesWithImages(await hydrateFavoritesFromServer());
       const tracks: TrackResult[] = favorites.map((f) => ({
         id: f.spotify_id,
         name: f.name,

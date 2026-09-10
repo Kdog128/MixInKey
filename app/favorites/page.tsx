@@ -7,7 +7,7 @@ import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import {
   enrichFavoritesWithAnalysis,
   enrichFavoritesWithImages,
-  getFavorites,
+  hydrateFavoritesFromServer,
   type FavoriteTrack,
 } from "@/lib/favorites";
 import {
@@ -80,7 +80,8 @@ export default function FavoritesPage() {
     }
 
     async function load() {
-      const enriched = await enrichAll(getFavorites());
+      const hydrated = await hydrateFavoritesFromServer();
+      const enriched = await enrichAll(hydrated);
       if (!cancelled) {
         setFavorites(enriched);
         setLoading(false);
@@ -90,9 +91,11 @@ export default function FavoritesPage() {
     void load();
 
     function syncFromStorage() {
-      void enrichAll(getFavorites()).then((next) => {
-        if (!cancelled) setFavorites(next);
-      });
+      void hydrateFavoritesFromServer()
+        .then((hydrated) => enrichAll(hydrated))
+        .then((next) => {
+          if (!cancelled) setFavorites(next);
+        });
     }
 
     window.addEventListener("focus", syncFromStorage);

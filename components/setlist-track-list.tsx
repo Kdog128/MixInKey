@@ -17,7 +17,7 @@ import {
   parseMusicalKeyString,
   type TransitionAnalysis,
 } from "@/lib/camelot";
-import { isFavorite, toggleFavorite } from "@/lib/favorites";
+import { hydrateFavoritesFromServer, isFavorite, toggleFavorite } from "@/lib/favorites";
 import { COHESIVE_INNER_CARD_CLASS, cohesiveSurfaceStyle } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
 
@@ -232,9 +232,16 @@ export function SetlistTrackList({
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setFavoriteIds(
-      new Set(tracks.filter((t) => isFavorite(t.spotify_id)).map((t) => t.spotify_id))
-    );
+    let cancelled = false;
+    void hydrateFavoritesFromServer().then(() => {
+      if (cancelled) return;
+      setFavoriteIds(
+        new Set(tracks.filter((t) => isFavorite(t.spotify_id)).map((t) => t.spotify_id))
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [tracks]);
 
   function handleDragEnd(result: DropResult) {

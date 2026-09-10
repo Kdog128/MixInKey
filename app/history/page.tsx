@@ -9,6 +9,7 @@ import { SourceBadgesFooter } from "@/components/source-badges-footer";
 import { compatibilityPairHref } from "@/lib/compatibility-pair";
 import { getCompatibilityScoreStyle } from "@/lib/compatibility-score";
 import { formatRelativeTime } from "@/lib/relative-time";
+import { visitorFetch } from "@/lib/visitor-id";
 import {
   COHESIVE_INNER_CARD_CLASS,
   PAGE_CONTENT_CLASS,
@@ -158,7 +159,7 @@ export default function HistoryPage() {
 
     async function load() {
       try {
-        const res = await fetch("/api/history");
+        const res = await visitorFetch("/api/history");
         const data = (await res.json()) as { items?: HistoryItem[] };
         if (!cancelled) {
           setItems(Array.isArray(data.items) ? data.items : []);

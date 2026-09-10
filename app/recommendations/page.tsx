@@ -11,7 +11,7 @@ import { compatibilityPairHref } from "@/lib/compatibility-pair";
 import {
   enrichFavoritesWithAnalysis,
   enrichFavoritesWithImages,
-  getFavorites,
+  hydrateFavoritesFromServer,
   type FavoriteTrack,
 } from "@/lib/favorites";
 import { addTrackToSetlist, buildSetlistTrack } from "@/lib/setlist";
@@ -81,7 +81,7 @@ export default function RecommendationsPage() {
 
     async function load() {
       const enriched = await enrichFavoritesWithAnalysis(
-        await enrichFavoritesWithImages(getFavorites())
+        await enrichFavoritesWithImages(await hydrateFavoritesFromServer())
       );
       if (cancelled) return;
       setFavorites(enriched);
