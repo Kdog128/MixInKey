@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase";
+import {
+  isMissingClientIdColumnError,
+  readVisitorClientId,
+} from "@/lib/visitor-id";
 
 interface SaveSetlistTrackInput {
   spotify_id: string;
@@ -17,8 +21,17 @@ interface SaveSetlistBody {
  * create table setlists (
  *   id uuid primary key default gen_random_uuid(),
  *   name text not null,
- *   created_at timestamptz default now()
+ *   created_at timestamptz default now(),
+ *   client_id text
  * );
+ *
+ * alter table setlists add column if not exists client_id text;
+ *
+ * -- After you have your browser's client_id (localStorage dj-companion-client-id):
+ * -- update setlists set client_id = '<your-client-id>' where client_id is null;
+ *
+ * -- Optional: set ORPHAN_SETLISTS_OWNER_CLIENT_ID to that same id to auto-claim
+ * -- leftover null rows on your next Set Planner load.
  *
  * create table setlist_tracks (
  *   id uuid primary key default gen_random_uuid(),
@@ -32,6 +45,11 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as SaveSetlistBody;
     const name = body.name?.trim();
     const tracks = body.tracks ?? [];
+    const clientId = readVisitorClientId(request);
+
+    if (!clientId) {
+      return NextResponse.json({ error: "Missing client_id" }, { status: 400 });
+    }
 
     if (!name) {
       return NextResponse.json({ error: "Setlist name is required" }, { status: 400 });
@@ -50,11 +68,19 @@ export async function POST(request: NextRequest) {
       .insert({
         name,
         created_at: new Date().toISOString(),
+        client_id: clientId,
       })
       .select("id")
       .single();
 
     if (setlistError || !setlist) {
+      if (isMissingClientIdColumnError(setlistError?.message)) {
+        console.warn("[setlists] client_id column is missing — run the migration");
+        return NextResponse.json(
+          { error: "Setlists are not set up for per-visitor access yet" },
+          { status: 503 }
+        );
+      }
       console.error("[setlists] Insert failed:", setlistError);
       return NextResponse.json(
         { error: setlistError?.message ?? "Failed to create setlist" },
@@ -82,19 +108,40 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const clientId = readVisitorClientId(request);
+    if (!clientId) {
+      return NextResponse.json({ setlists: [] });
+    }
+
     const supabase = createSupabaseServerClient();
     if (!supabase) {
       return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
     }
 
+    const ownerClientId = process.env.ORPHAN_SETLISTS_OWNER_CLIENT_ID?.trim();
+    if (ownerClientId && ownerClientId === clientId) {
+      const { error: claimError } = await supabase
+        .from("setlists")
+        .update({ client_id: clientId })
+        .is("client_id", null);
+      if (claimError && !isMissingClientIdColumnError(claimError.message)) {
+        console.warn("[setlists] Orphan claim failed:", claimError.message);
+      }
+    }
+
     const { data, error } = await supabase
       .from("setlists")
       .select("id, name, created_at, setlist_tracks(count)")
+      .eq("client_id", clientId)
       .order("created_at", { ascending: false });
 
     if (error) {
+      if (isMissingClientIdColumnError(error.message)) {
+        console.warn("[setlists] client_id column is missing — run the migration");
+        return NextResponse.json({ setlists: [] });
+      }
       console.error("[setlists] List failed:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

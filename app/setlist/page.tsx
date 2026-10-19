@@ -28,6 +28,7 @@ import {
   type ExampleTrackPlaceholder,
 } from "@/lib/example-track-placeholders";
 import { PLACEHOLDER_ROTATE_MS } from "@/lib/example-artist-placeholders";
+import { visitorFetch, visitorRequestHeaders } from "@/lib/visitor-id";
 import {
   COHESIVE_CARD_CLASS,
   COHESIVE_CONTROL_SURFACE_CLASS,
@@ -144,7 +145,7 @@ export default function SetlistPage() {
   const loadSavedSetlists = useCallback(async () => {
     setLoadingSaved(true);
     try {
-      const res = await fetch("/api/setlists");
+      const res = await visitorFetch("/api/setlists");
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error ?? "Failed to load saved sets");
@@ -331,7 +332,7 @@ export default function SetlistPage() {
     setMessage(null);
 
     try {
-      const res = await fetch(`/api/setlists/${encodeURIComponent(id)}`);
+      const res = await visitorFetch(`/api/setlists/${encodeURIComponent(id)}`);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error ?? "Failed to load setlist");
@@ -362,7 +363,7 @@ export default function SetlistPage() {
     setMessage(null);
 
     try {
-      const res = await fetch(`/api/setlists/${encodeURIComponent(id)}`, {
+      const res = await visitorFetch(`/api/setlists/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       const data = await res.json();
@@ -486,14 +487,14 @@ export default function SetlistPage() {
 
       const isUpdate = loadedSetlistId !== null;
       const res = isUpdate
-        ? await fetch(`/api/setlists/${encodeURIComponent(loadedSetlistId)}`, {
+        ? await visitorFetch(`/api/setlists/${encodeURIComponent(loadedSetlistId)}`, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: visitorRequestHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ name: trimmedName, tracks: trackPayload }),
           })
-        : await fetch("/api/setlists", {
+        : await visitorFetch("/api/setlists", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: visitorRequestHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ name: trimmedName, tracks: trackPayload }),
           });
       const data = await res.json();
@@ -545,9 +546,9 @@ export default function SetlistPage() {
           spotify_id: t.spotify_id,
           position: t.position,
         }));
-        const res = await fetch(`/api/setlists/${encodeURIComponent(loadedSetlistId)}`, {
+        const res = await visitorFetch(`/api/setlists/${encodeURIComponent(loadedSetlistId)}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: visitorRequestHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ name, tracks: trackPayload }),
         });
         const data = await res.json();

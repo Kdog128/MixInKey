@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { getCachedTracksAnalysis } from "@/lib/tracks-cache";
 import { resolveTrackMetadataByIds } from "@/lib/track-metadata";
+import {
+  isMissingClientIdColumnError,
+  readVisitorClientId,
+} from "@/lib/visitor-id";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -17,11 +21,16 @@ interface UpdateSetlistBody {
   tracks?: SetlistTrackRow[];
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     if (!id?.trim()) {
       return NextResponse.json({ error: "Setlist ID is required" }, { status: 400 });
+    }
+
+    const clientId = readVisitorClientId(request);
+    if (!clientId) {
+      return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
     }
 
     const supabase = createSupabaseServerClient();
@@ -33,9 +42,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       .from("setlists")
       .select("id, name, created_at")
       .eq("id", id)
+      .eq("client_id", clientId)
       .maybeSingle();
 
     if (setlistError) {
+      if (isMissingClientIdColumnError(setlistError.message)) {
+        console.warn("[setlists/id] client_id column is missing — run the migration");
+        return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
+      }
       console.error("[setlists/id] Fetch failed:", setlistError);
       return NextResponse.json({ error: setlistError.message }, { status: 500 });
     }
@@ -105,6 +119,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const body = (await request.json()) as UpdateSetlistBody;
     const name = body.name?.trim();
     const tracks = body.tracks ?? [];
+    const clientId = readVisitorClientId(request);
+
+    if (!clientId) {
+      return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
+    }
 
     if (!name) {
       return NextResponse.json({ error: "Setlist name is required" }, { status: 400 });
@@ -122,9 +141,14 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       .from("setlists")
       .select("id")
       .eq("id", setlistId)
+      .eq("client_id", clientId)
       .maybeSingle();
 
     if (fetchError) {
+      if (isMissingClientIdColumnError(fetchError.message)) {
+        console.warn("[setlists/id] client_id column is missing — run the migration");
+        return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
+      }
       console.error("[setlists/id] PUT fetch failed:", fetchError);
       return NextResponse.json({ error: fetchError.message }, { status: 500 });
     }
@@ -135,7 +159,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const { error: updateError } = await supabase
       .from("setlists")
       .update({ name })
-      .eq("id", setlistId);
+      .eq("id", setlistId)
+      .eq("client_id", clientId);
 
     if (updateError) {
       console.error("[setlists/id] PUT name update failed:", updateError);
@@ -172,7 +197,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const setlistId = id?.trim();
@@ -181,6 +206,11 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     if (!setlistId) {
       return NextResponse.json({ error: "Setlist ID is required" }, { status: 400 });
+    }
+
+    const clientId = readVisitorClientId(request);
+    if (!clientId) {
+      return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
     }
 
     const supabase = createSupabaseServerClient();
@@ -193,11 +223,16 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       .from("setlists")
       .select("id, name")
       .eq("id", setlistId)
+      .eq("client_id", clientId)
       .maybeSingle();
 
     console.log("[setlists/id] DELETE pre-check:", { setlistId, existing, fetchError });
 
     if (fetchError) {
+      if (isMissingClientIdColumnError(fetchError.message)) {
+        console.warn("[setlists/id] client_id column is missing — run the migration");
+        return NextResponse.json({ error: "Setlist not found" }, { status: 404 });
+      }
       console.error("[setlists/id] DELETE fetch failed:", fetchError);
       return NextResponse.json({ error: fetchError.message }, { status: 500 });
     }
@@ -227,6 +262,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       .from("setlists")
       .delete()
       .eq("id", setlistId)
+      .eq("client_id", clientId)
       .select("id, name");
 
     console.log("[setlists/id] DELETE setlists result:", {

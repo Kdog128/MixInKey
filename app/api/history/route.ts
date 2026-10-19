@@ -6,8 +6,11 @@
  *   track1_spotify_id text not null,
  *   track2_spotify_id text not null,
  *   score int,
- *   compared_at timestamptz default now()
+ *   compared_at timestamptz default now(),
+ *   client_id text
  * );
+ *
+ * alter table comparison_history add column if not exists client_id text;
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,6 +23,10 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase";
 import { resolveTrackMetadataByIds } from "@/lib/track-metadata";
 import { getCachedTrackRowsByIds } from "@/lib/tracks-cache";
+import {
+  isMissingClientIdColumnError,
+  readVisitorClientId,
+} from "@/lib/visitor-id";
 
 const HISTORY_LIMIT = 50;
 
@@ -37,6 +44,10 @@ function isMissingTableError(message: string | undefined): boolean {
   return lower.includes("comparison_history") && lower.includes("does not exist");
 }
 
+function isHistorySchemaError(message: string | undefined): boolean {
+  return isMissingTableError(message) || isMissingClientIdColumnError(message);
+}
+
 function parseSpotifyId(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -46,7 +57,12 @@ function parseScore(value: unknown): number | null {
   return Math.round(Math.min(100, Math.max(0, value)));
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const clientId = readVisitorClientId(request);
+  if (!clientId) {
+    return NextResponse.json({ items: [] });
+  }
+
   const supabase = createSupabaseServerClient();
   if (!supabase) {
     return NextResponse.json({ items: [] });
@@ -56,12 +72,13 @@ export async function GET() {
     const { data, error } = await supabase
       .from("comparison_history")
       .select("id, track1_spotify_id, track2_spotify_id, score, compared_at")
+      .eq("client_id", clientId)
       .order("compared_at", { ascending: false })
       .limit(HISTORY_LIMIT * 3);
 
     if (error) {
-      if (isMissingTableError(error.message)) {
-        console.warn("[history] comparison_history table is missing — run the migration");
+      if (isHistorySchemaError(error.message)) {
+        console.warn("[history] comparison_history is missing table or client_id column — run the migration");
         return NextResponse.json({ items: [] });
       }
       console.warn("[history] Read failed:", error.message);
@@ -135,11 +152,17 @@ export async function POST(request: NextRequest) {
       track1_spotify_id?: unknown;
       track2_spotify_id?: unknown;
       score?: unknown;
+      client_id?: unknown;
     };
 
     const track1 = parseSpotifyId(body.track1_spotify_id);
     const track2 = parseSpotifyId(body.track2_spotify_id);
     const score = parseScore(body.score);
+    const clientId = readVisitorClientId(request, body.client_id);
+
+    if (!clientId) {
+      return NextResponse.json({ error: "Missing client_id" }, { status: 400 });
+    }
 
     if (!track1 || !track2 || score == null) {
       return NextResponse.json({ error: "Invalid history payload" }, { status: 400 });
@@ -149,10 +172,11 @@ export async function POST(request: NextRequest) {
     const { data: recentRows, error: recentError } = await supabase
       .from("comparison_history")
       .select("id, track1_spotify_id, track2_spotify_id, compared_at")
+      .eq("client_id", clientId)
       .order("compared_at", { ascending: false })
       .limit(40);
 
-    if (recentError && !isMissingTableError(recentError.message)) {
+    if (recentError && !isHistorySchemaError(recentError.message)) {
       console.warn("[history] Recent-row lookup failed:", recentError.message);
     }
 
@@ -175,7 +199,8 @@ export async function POST(request: NextRequest) {
             score,
             compared_at: new Date().toISOString(),
           })
-          .eq("id", recentMatch.id);
+          .eq("id", recentMatch.id)
+          .eq("client_id", clientId);
 
         if (updateError) {
           console.warn("[history] Dedupe update failed:", updateError.message);
@@ -189,11 +214,12 @@ export async function POST(request: NextRequest) {
       track1_spotify_id: track1,
       track2_spotify_id: track2,
       score,
+      client_id: clientId,
     });
 
     if (error) {
-      if (isMissingTableError(error.message)) {
-        console.warn("[history] comparison_history table is missing — run the migration");
+      if (isHistorySchemaError(error.message)) {
+        console.warn("[history] comparison_history is missing table or client_id column — run the migration");
         return NextResponse.json({ error: "History table is not set up yet" }, { status: 503 });
       }
       console.warn("[history] Insert failed:", error.message);

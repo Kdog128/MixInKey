@@ -18,6 +18,7 @@ import {
 import { COMPATIBILITY_NAV_RESET_EVENT } from "@/lib/compatibility-nav-reset";
 import { metadataToTrackResult } from "@/lib/compatibility-pair";
 import { computeOverallCompatibility } from "@/lib/compatibility-score";
+import { getVisitorClientId, visitorRequestHeaders } from "@/lib/visitor-id";
 import { analyzeTrackWithEssentia } from "@/lib/essentia-client";
 import {
   DEFAULT_EXAMPLE_ARTIST_PAIR,
@@ -195,11 +196,12 @@ export default function Home() {
       historyWrittenRef.current = comparisonKey;
       void fetch("/api/history", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: visitorRequestHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           track1_spotify_id: a.id,
           track2_spotify_id: b.id,
           score: overall.score,
+          client_id: getVisitorClientId(),
         }),
       }).catch((err) => {
         console.warn("[history] Failed to save comparison:", err);

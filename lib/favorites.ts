@@ -1,3 +1,5 @@
+import { visitorFetch, visitorRequestHeaders } from "@/lib/visitor-id";
+
 export interface FavoriteTrack {
   name: string;
   artist: string;
@@ -49,8 +51,81 @@ function readFavorites(): FavoriteTrack[] {
   }
 }
 
-function writeFavorites(favorites: FavoriteTrack[]): void {
+function writeFavorites(favorites: FavoriteTrack[], persistRemote = true): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+  if (persistRemote) persistFavoritesToServer(favorites);
+}
+
+function persistFavoritesToServer(favorites: FavoriteTrack[]): void {
+  if (typeof window === "undefined") return;
+  void visitorFetch("/api/favorites", {
+    method: "PUT",
+    headers: visitorRequestHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ tracks: favorites }),
+  }).catch((err) => {
+    console.warn("[favorites] Failed to sync:", err);
+  });
+}
+
+function mergeFavorites(server: FavoriteTrack[], local: FavoriteTrack[]): FavoriteTrack[] {
+  const byId = new Map<string, FavoriteTrack>();
+  for (const track of server) byId.set(track.spotify_id, track);
+  for (const track of local) {
+    const existing = byId.get(track.spotify_id);
+    if (!existing) {
+      byId.set(track.spotify_id, track);
+      continue;
+    }
+    const localSaved = Date.parse(track.saved_at);
+    const serverSaved = Date.parse(existing.saved_at);
+    if (
+      Number.isFinite(localSaved) &&
+      (!Number.isFinite(serverSaved) || localSaved >= serverSaved)
+    ) {
+      byId.set(track.spotify_id, { ...existing, ...track });
+    }
+  }
+  return [...byId.values()].sort((a, b) => {
+    const aTime = Date.parse(a.saved_at);
+    const bTime = Date.parse(b.saved_at);
+    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  });
+}
+
+let hydrateInflight: Promise<FavoriteTrack[]> | null = null;
+let hydrated = false;
+
+export async function hydrateFavoritesFromServer(): Promise<FavoriteTrack[]> {
+  if (hydrated && !hydrateInflight) return readFavorites();
+  if (hydrateInflight) return hydrateInflight;
+
+  hydrateInflight = (async () => {
+    const local = readFavorites();
+    try {
+      const res = await visitorFetch("/api/favorites");
+      const data = (await res.json()) as { tracks?: StoredFavorite[] };
+      if (!res.ok || !Array.isArray(data.tracks)) {
+        return local;
+      }
+
+      const server = data.tracks.map(normalizeFavorite);
+      if (server.length === 0) {
+        if (local.length > 0) persistFavoritesToServer(local);
+        return local;
+      }
+
+      const merged = mergeFavorites(server, local);
+      writeFavorites(merged, true);
+      return merged;
+    } catch {
+      return local;
+    } finally {
+      hydrated = true;
+      hydrateInflight = null;
+    }
+  })();
+
+  return hydrateInflight;
 }
 
 export function getFavorites(): FavoriteTrack[] {

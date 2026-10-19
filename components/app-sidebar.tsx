@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MixInKeyLogo } from "@/components/mixinkey-logo";
@@ -10,6 +11,7 @@ import {
   NAV_ITEMS,
 } from "@/lib/nav-items";
 import { resolveNavPathname } from "@/lib/nav-active";
+import { getVisitorClientId } from "@/lib/visitor-id";
 import { COHESIVE_PANEL_CLASS } from "@/lib/ui-surfaces";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +41,10 @@ export function AppSidebar({ initialPathname }: AppSidebarProps) {
   const clientPathname = usePathname();
   const pathname = resolveNavPathname(clientPathname, initialPathname);
   const activeHref = getActiveNavHref(pathname);
+
+  useEffect(() => {
+    getVisitorClientId();
+  }, []);
 
   return (
     <aside
